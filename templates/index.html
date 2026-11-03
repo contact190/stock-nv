@@ -1,0 +1,2105 @@
+<!DOCTYPE html>
+<html lang="fr" class="light">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>StockMaster Alu — Gestion de Stock Menuiserie Aluminium & Volets (DZD)</title>
+  
+  <!-- Tailwind CSS via CDN -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      darkMode: 'class',
+      theme: {
+        extend: {
+          colors: {
+            brand: {
+              50: '#eef2ff',
+              100: '#e0e7ff',
+              500: '#6366f1',
+              600: '#4f46e5',
+              700: '#4338ca',
+            }
+          }
+        }
+      }
+    }
+  </script>
+
+  <!-- Chart.js CDN -->
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+
+  <!-- Lucide Icons -->
+  <script src="https://unpkg.com/lucide@latest"></script>
+
+  <!-- Supabase JS Client pour le Realtime & la synchronisation Cloud -->
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+
+  <!-- Styles personnalisés -->
+  <link rel="stylesheet" href="/static/css/style.css">
+</head>
+<body class="bg-slate-50 dark:bg-slate-950 text-slate-900 dark:text-slate-100 min-h-screen flex flex-col antialiased selection:bg-indigo-500 selection:text-white transition-colors duration-200">
+
+  <!-- ================= TOPBAR FIXE ================= -->
+  <header class="sticky top-0 z-40 w-full glass-panel border-b border-slate-200 dark:border-slate-800 shadow-sm transition-colors">
+    <div class="w-full max-w-[1920px] mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between gap-4">
+      
+      <!-- Logo & Titre Menuiserie Aluminium -->
+      <div class="flex items-center gap-3">
+        <div class="w-10 h-10 rounded-xl bg-gradient-to-tr from-indigo-600 via-indigo-500 to-emerald-400 flex items-center justify-center text-white shadow-md shadow-indigo-500/20">
+          <i data-lucide="layers" class="w-5 h-5"></i>
+        </div>
+        <div>
+          <div class="flex items-center gap-2">
+            <span class="font-extrabold text-lg sm:text-xl tracking-tight bg-gradient-to-r from-indigo-600 to-indigo-800 dark:from-indigo-400 dark:to-emerald-400 bg-clip-text text-transparent">StockMaster</span>
+            <span class="px-2 py-0.5 text-[10px] font-bold rounded-full bg-indigo-100 text-indigo-700 dark:bg-indigo-900/60 dark:text-indigo-300 uppercase tracking-wider">Alu & Volets</span>
+          </div>
+          <p class="text-[11px] text-slate-500 dark:text-slate-400 hidden sm:block">Profilés Aluminium • Méthode PMP • Traçabilité Chantiers</p>
+        </div>
+      </div>
+
+      <!-- Actions Rapides Topbar -->
+      <div class="flex items-center gap-2 sm:gap-3">
+        <!-- Badge Cloud Synchro Supabase -->
+        <div id="supabaseSyncBadge" class="hidden items-center gap-1.5 px-2.5 py-1 rounded-full bg-emerald-50 dark:bg-emerald-950/60 border border-emerald-200 dark:border-emerald-800 text-[11px] font-bold text-emerald-700 dark:text-emerald-300 shadow-sm" title="Synchronisation temps réel active avec Supabase Cloud">
+          <span class="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
+          <span class="hidden sm:inline">Cloud Synchro Direct</span>
+        </div>
+
+        <!-- Badge Devise DZD -->
+        <span class="px-2.5 py-1 rounded-full bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-xs font-bold font-mono text-slate-700 dark:text-slate-300">
+          DZD (DA)
+        </span>
+
+        <!-- Bouton Nouveau Produit au Catalogue (Anti-doublon) -->
+        <button onclick="openNewCatalogModal()" class="btn-touch px-3 sm:px-4 py-2 rounded-xl bg-slate-800 dark:bg-slate-700 hover:bg-slate-900 text-white font-semibold text-xs sm:text-sm shadow-sm flex items-center gap-2">
+          <i data-lucide="plus" class="w-4 h-4"></i>
+          <span class="hidden sm:inline">Créer Article</span>
+        </button>
+
+        <!-- Bouton Entrée en Stock -->
+        <button onclick="switchTab('actions'); selectActionSubTab('stocker');" class="btn-touch px-3 sm:px-4 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white font-semibold text-xs sm:text-sm shadow-sm shadow-indigo-600/30 flex items-center gap-2">
+          <i data-lucide="download" class="w-4 h-4"></i>
+          <span class="hidden xs:inline">Entrée Stock</span>
+        </button>
+
+        <!-- Bouton Thème Sombre / Clair -->
+        <button id="themeToggleBtn" onclick="toggleTheme()" class="btn-touch p-2 sm:p-2.5 rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800" title="Changer de thème">
+          <i data-lucide="moon" class="w-4 h-4 block dark:hidden"></i>
+          <i data-lucide="sun" class="w-4 h-4 hidden dark:block"></i>
+        </button>
+      </div>
+
+    </div>
+  </header>
+
+  <!-- ================= LAYOUT PRINCIPAL AVEC NAVIGATION ================= -->
+  <div class="w-full max-w-[1920px] mx-auto px-3 sm:px-6 lg:px-8 flex-1 flex flex-col lg:flex-row gap-6 pt-4 sm:pt-6 content-bottom-padding">
+
+    <!-- SIDEBAR NAVIGATION (Desktop >= lg) -->
+    <aside class="hidden lg:block w-56 xl:w-60 shrink-0">
+      <nav class="sticky top-24 space-y-1.5 p-3 rounded-2xl glass-panel border border-slate-200 dark:border-slate-800 shadow-sm">
+        
+        <button onclick="switchTab('dashboard')" id="sideNav-dashboard" class="side-nav-btn w-full flex items-center gap-3 px-3.5 py-3 rounded-xl font-medium text-sm text-slate-600 dark:text-slate-300 hover:bg-indigo-50 dark:hover:bg-slate-800/80 transition-all">
+          <i data-lucide="layout-dashboard" class="w-5 h-5 text-indigo-500"></i>
+          <span>1. Dashboard PMP</span>
+        </button>
+
+        <button onclick="switchTab('stock')" id="sideNav-stock" class="side-nav-btn w-full flex items-center gap-3 px-3.5 py-3 rounded-xl font-medium text-sm text-slate-600 dark:text-slate-300 hover:bg-indigo-50 dark:hover:bg-slate-800/80 transition-all">
+          <i data-lucide="package" class="w-5 h-5 text-indigo-500"></i>
+          <span>2. Catalogue & Stock</span>
+        </button>
+
+        <button onclick="switchTab('actions')" id="sideNav-actions" class="side-nav-btn w-full flex items-center gap-3 px-3.5 py-3 rounded-xl font-medium text-sm text-slate-600 dark:text-slate-300 hover:bg-indigo-50 dark:hover:bg-slate-800/80 transition-all">
+          <i data-lucide="zap" class="w-5 h-5 text-amber-500"></i>
+          <span>3. Actions Stock</span>
+        </button>
+
+        <button onclick="switchTab('movements')" id="sideNav-movements" class="side-nav-btn w-full flex items-center gap-3 px-3.5 py-3 rounded-xl font-medium text-sm text-slate-600 dark:text-slate-300 hover:bg-indigo-50 dark:hover:bg-slate-800/80 transition-all">
+          <i data-lucide="history" class="w-5 h-5 text-emerald-500"></i>
+          <span>4. Mouvements</span>
+        </button>
+
+        <button onclick="switchTab('settings')" id="sideNav-settings" class="side-nav-btn w-full flex items-center gap-3 px-3.5 py-3 rounded-xl font-medium text-sm text-slate-600 dark:text-slate-300 hover:bg-indigo-50 dark:hover:bg-slate-800/80 transition-all">
+          <i data-lucide="sliders" class="w-5 h-5 text-slate-500"></i>
+          <span>5. Paramètres</span>
+        </button>
+
+        <button onclick="switchTab('inventory')" id="sideNav-inventory" class="side-nav-btn w-full flex items-center gap-3 px-3.5 py-3 rounded-xl font-medium text-sm text-slate-600 dark:text-slate-300 hover:bg-indigo-50 dark:hover:bg-slate-800/80 transition-all">
+          <i data-lucide="clipboard-check" class="w-5 h-5 text-rose-500"></i>
+          <span>6. Inventaire</span>
+        </button>
+
+        <div class="pt-4 mt-4 border-t border-slate-200 dark:border-slate-800 space-y-2">
+          <div class="px-3 py-2 text-xs text-slate-500 dark:text-slate-400 space-y-1">
+            <div class="flex justify-between font-semibold">
+              <span>Articles en alerte:</span>
+              <span id="sideAlertsCount" class="text-rose-500 font-bold">0</span>
+            </div>
+            <div class="flex justify-between font-semibold">
+              <span>Anomalies inventaire:</span>
+              <span id="sideInventoryAnomaliesCount" class="text-rose-600 font-bold">0</span>
+            </div>
+            <div class="flex justify-between font-semibold">
+              <span>Sans casier fixe:</span>
+              <span id="sideUnassignedCount" class="text-amber-500 font-bold">0</span>
+            </div>
+            <div class="flex justify-between pt-1 border-t border-slate-200 dark:border-slate-800">
+              <span>Valeur au PMP:</span>
+              <span id="sideRealVal" class="text-slate-700 dark:text-slate-200 font-bold">0 DZD</span>
+            </div>
+          </div>
+        </div>
+
+      </nav>
+    </aside>
+
+    <!-- ZONE DE CONTENU PRINCIPALE (6 ONGLETS) -->
+    <main class="flex-1 w-full min-w-0">
+
+      <!-- ================= 1. SECTION DASHBOARD ================= -->
+      <section id="tab-dashboard" class="tab-content space-y-6">
+        
+        <!-- BARRE DE FILTRES GLOBAUX EN HAUT DU DASHBOARD (Commandes & Période : Semaine, Mois, An, Personnalisé) -->
+        <div class="glass-panel p-4 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm space-y-3">
+          <div class="flex flex-col md:flex-row md:items-center justify-between gap-4">
+            <div class="flex items-center gap-3">
+              <div class="p-2.5 rounded-xl bg-indigo-100 dark:bg-indigo-900/40 text-indigo-600 dark:text-indigo-400">
+                <i data-lucide="filter" class="w-5 h-5"></i>
+              </div>
+              <div>
+                <h2 class="text-sm font-bold text-slate-800 dark:text-slate-100">Filtres du Tableau de Bord</h2>
+                <p class="text-xs text-slate-500 dark:text-slate-400">Synchronisation en direct des flux et métriques par commande/lot et par période temporelle</p>
+              </div>
+            </div>
+
+            <div class="flex items-center gap-2 flex-wrap">
+              <div class="relative min-w-[240px]">
+                <select id="dashboardOrderFilter" onchange="onDashboardOrderFilterChange()" class="w-full pl-3 pr-8 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-xs sm:text-sm font-semibold focus:ring-2 focus:ring-indigo-500 outline-none">
+                  <option value="ALL">📦 Toutes les commandes & lots (Vue Globale)</option>
+                </select>
+              </div>
+              <button onclick="refreshDashboard()" class="btn-touch p-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-600 dark:text-slate-300" title="Actualiser les données">
+                <i data-lucide="refresh-cw" class="w-4 h-4"></i>
+              </button>
+            </div>
+          </div>
+
+          <!-- FILTRES TEMPORELS : Semaine / Mois / Année / Personnalisé -->
+          <div class="pt-2 border-t border-slate-100 dark:border-slate-800 flex flex-wrap items-center justify-between gap-2">
+            <div class="flex items-center gap-1.5 flex-wrap">
+              <span class="text-xs font-semibold text-slate-500 dark:text-slate-400 mr-1 flex items-center gap-1">
+                <i data-lucide="calendar" class="w-3.5 h-3.5"></i>
+                <span>Période :</span>
+              </span>
+              <button type="button" onclick="setDashboardPeriod('ALL')" id="btnPeriod-ALL" class="period-btn px-3 py-1.5 rounded-lg text-xs font-bold bg-indigo-600 text-white shadow-sm transition-all">
+                Toutes
+              </button>
+              <button type="button" onclick="setDashboardPeriod('WEEK')" id="btnPeriod-WEEK" class="period-btn px-3 py-1.5 rounded-lg text-xs font-semibold bg-white dark:bg-slate-900 text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 border border-slate-200 dark:border-slate-800 transition-all">
+                Cette Semaine
+              </button>
+              <button type="button" onclick="setDashboardPeriod('MONTH')" id="btnPeriod-MONTH" class="period-btn px-3 py-1.5 rounded-lg text-xs font-semibold bg-white dark:bg-slate-900 text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 border border-slate-200 dark:border-slate-800 transition-all">
+                Ce Mois-ci
+              </button>
+              <button type="button" onclick="setDashboardPeriod('YEAR')" id="btnPeriod-YEAR" class="period-btn px-3 py-1.5 rounded-lg text-xs font-semibold bg-white dark:bg-slate-900 text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 border border-slate-200 dark:border-slate-800 transition-all">
+                Cette Année
+              </button>
+              <button type="button" onclick="setDashboardPeriod('CUSTOM')" id="btnPeriod-CUSTOM" class="period-btn px-3 py-1.5 rounded-lg text-xs font-semibold bg-white dark:bg-slate-900 text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 border border-slate-200 dark:border-slate-800 transition-all flex items-center gap-1">
+                <span>Personnalisé</span>
+                <i data-lucide="sliders" class="w-3 h-3"></i>
+              </button>
+            </div>
+
+            <!-- Plage personnalisée (visible uniquement si Personnalisé est sélectionné) -->
+            <div id="customDateRangeBox" class="hidden flex items-center gap-2 flex-wrap text-xs">
+              <label class="text-slate-500 font-medium">Du</label>
+              <input type="date" id="dashCustomStart" class="px-2.5 py-1 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-xs focus:ring-1 focus:ring-indigo-500 outline-none">
+              <label class="text-slate-500 font-medium">Au</label>
+              <input type="date" id="dashCustomEnd" class="px-2.5 py-1 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-xs focus:ring-1 focus:ring-indigo-500 outline-none">
+              <button type="button" onclick="applyCustomDateFilter()" class="px-3 py-1 rounded-lg bg-indigo-600 hover:bg-indigo-700 text-white font-bold shadow-sm">
+                Filtrer
+              </button>
+            </div>
+          </div>
+        </div>
+
+        <!-- 4 INDICATEURS FINANCIERS & KPIS AU PMP -->
+        <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+          
+          <!-- KPI 1 : Valeur d'achat totale -->
+          <div class="metric-card p-5 rounded-2xl glass-panel border border-slate-200/90 dark:border-slate-800 relative overflow-hidden">
+            <div class="flex items-center justify-between mb-3">
+              <span class="text-xs font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">Valeur d'achat totale</span>
+              <div class="p-2 rounded-xl bg-indigo-50 dark:bg-indigo-950/60 text-indigo-600 dark:text-indigo-400">
+                <i data-lucide="wallet" class="w-5 h-5"></i>
+              </div>
+            </div>
+            <div class="text-xl sm:text-2xl font-extrabold text-slate-900 dark:text-white" id="kpiTotalPurchase">0,00 DZD</div>
+            <p class="text-xs text-slate-500 dark:text-slate-400 mt-1">Coût historique cumulé des entrées atelier</p>
+            <div class="mt-3 flex items-center gap-1.5 text-xs font-semibold text-indigo-600 dark:text-indigo-400">
+              <i data-lucide="shield-check" class="w-3.5 h-3.5"></i>
+              <span>Approvisionnements alu tracés</span>
+            </div>
+          </div>
+
+          <!-- KPI 2 : Valeur du stock réel au PMP -->
+          <div class="metric-card p-5 rounded-2xl glass-panel border border-emerald-200/70 dark:border-emerald-900/40 relative overflow-hidden bg-gradient-to-br from-white via-white to-emerald-50/40 dark:from-slate-900 dark:to-emerald-950/20">
+            <div class="flex items-center justify-between mb-3">
+              <span class="text-xs font-bold uppercase tracking-wider text-emerald-700 dark:text-emerald-400">Valeur Stock Réel (PMP)</span>
+              <div class="p-2 rounded-xl bg-emerald-100 dark:bg-emerald-900/50 text-emerald-600 dark:text-emerald-400">
+                <i data-lucide="boxes" class="w-5 h-5"></i>
+              </div>
+            </div>
+            <div class="text-xl sm:text-2xl font-extrabold text-emerald-600 dark:text-emerald-400" id="kpiRealStockVal">0,00 DZD</div>
+            <p class="text-xs text-slate-500 dark:text-slate-400 mt-1">∑ (Quantité Réelle × PMP dynamique)</p>
+            <div class="mt-3 flex items-center justify-between text-xs text-slate-600 dark:text-slate-400 font-medium">
+              <span>Physique: <b id="kpiRealQty" class="text-slate-800 dark:text-slate-200">0</b> barres</span>
+              <span>Dispo: <b id="kpiAvailableQty" class="text-emerald-600 font-bold">0</b></span>
+            </div>
+          </div>
+
+          <!-- KPI 3 : Valeur du stock déstocké -->
+          <div class="metric-card p-5 rounded-2xl glass-panel border border-slate-200/90 dark:border-slate-800 relative overflow-hidden">
+            <div class="flex items-center justify-between mb-3">
+              <span class="text-xs font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">Valeur Sortie / Déstockée</span>
+              <div class="p-2 rounded-xl bg-amber-50 dark:bg-amber-950/60 text-amber-600 dark:text-amber-400">
+                <i data-lucide="arrow-up-right" class="w-5 h-5"></i>
+              </div>
+            </div>
+            <div class="text-xl sm:text-2xl font-extrabold text-amber-600 dark:text-amber-400" id="kpiDestockedVal">0,00 DZD</div>
+            <p class="text-xs text-slate-500 dark:text-slate-400 mt-1">Marchandises débitées ou posées</p>
+            <div class="mt-3 text-xs text-slate-500 dark:text-slate-400 flex items-center justify-between">
+              <span>Réservé chantiers:</span>
+              <span id="kpiReservedVal" class="font-bold text-slate-700 dark:text-slate-300">0,00 DZD</span>
+            </div>
+          </div>
+
+          <!-- KPI 4 : Alertes combinées (Stock bas & Casier non affecté) -->
+          <div class="metric-card p-5 rounded-2xl glass-panel border border-rose-200/80 dark:border-rose-900/40 relative overflow-hidden bg-gradient-to-br from-white to-rose-50/40 dark:from-slate-900 dark:to-rose-950/20">
+            <div class="flex items-center justify-between mb-3">
+              <span class="text-xs font-bold uppercase tracking-wider text-rose-600 dark:text-rose-400">Alertes Stock Bas</span>
+              <div class="p-2 rounded-xl bg-rose-100 dark:bg-rose-900/50 text-rose-600 dark:text-rose-400 pulse-badge">
+                <i data-lucide="alert-triangle" class="w-5 h-5"></i>
+              </div>
+            </div>
+            <div class="flex items-baseline gap-2">
+              <span class="text-2xl sm:text-3xl font-extrabold text-rose-600 dark:text-rose-400" id="kpiLowStockCount">0</span>
+              <span class="text-xs text-slate-500">sous seuil</span>
+            </div>
+            <div class="mt-3 flex items-center justify-between text-xs">
+              <span class="text-amber-600 font-semibold" id="kpiUnassignedCount">0 sans casier</span>
+              <a href="#alertsSection" onclick="document.getElementById('alertsSection').scrollIntoView({behavior: 'smooth'})" class="text-rose-600 font-bold hover:underline flex items-center gap-0.5">
+                <span>Voir</span>
+                <i data-lucide="chevron-down" class="w-3.5 h-3.5"></i>
+              </a>
+            </div>
+          </div>
+
+        </div>
+
+        <!-- GRAPHIQUES DE TRAÇABILITÉ -->
+        <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+          <div class="lg:col-span-2 glass-panel p-5 rounded-2xl border border-slate-200 dark:border-slate-800">
+            <div class="flex items-center justify-between mb-4">
+              <div>
+                <h3 class="text-sm font-bold text-slate-900 dark:text-slate-100">Évolution des Flux Profilés & Volets</h3>
+                <p class="text-xs text-slate-500 dark:text-slate-400">Valeurs en DZD des approvisionnements vs déstockages chantiers</p>
+              </div>
+              <span class="text-xs font-semibold px-2.5 py-1 rounded-full bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300">Journalier</span>
+            </div>
+            <div class="h-64 sm:h-72 w-full">
+              <canvas id="timelineChart"></canvas>
+            </div>
+          </div>
+
+          <div class="glass-panel p-5 rounded-2xl border border-slate-200 dark:border-slate-800 flex flex-col justify-between">
+            <div>
+              <div class="flex items-center justify-between mb-4">
+                <div>
+                  <h3 class="text-sm font-bold text-slate-900 dark:text-slate-100">Valeur par Catégorie (PMP)</h3>
+                  <p class="text-xs text-slate-500 dark:text-slate-400">Répartition de la valeur en atelier</p>
+                </div>
+                <div class="p-1.5 rounded-lg bg-indigo-50 dark:bg-indigo-950 text-indigo-600">
+                  <i data-lucide="pie-chart" class="w-4 h-4"></i>
+                </div>
+              </div>
+              <div class="h-56 sm:h-60 w-full relative flex items-center justify-center">
+                <canvas id="categoryChart"></canvas>
+              </div>
+            </div>
+            <div id="categorySummaryList" class="mt-3 space-y-1.5 max-h-36 overflow-y-auto pr-1 text-xs"></div>
+          </div>
+        </div>
+
+        <!-- BLOC DES ANOMALIES D'INVENTAIRE (DOUBLE COMPTAGE 2 PERSONNES) -->
+        <div id="dashboardInventoryAnomaliesSection" class="hidden glass-panel p-5 rounded-2xl border-2 border-rose-400/80 dark:border-rose-800 shadow-md space-y-4 bg-rose-50/20 dark:bg-rose-950/20">
+          <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-rose-200 dark:border-rose-900/60 pb-3">
+            <div class="flex items-center gap-2">
+              <div class="p-2.5 rounded-xl bg-rose-600 text-white shadow-sm">
+                <i data-lucide="alert-triangle" class="w-5 h-5"></i>
+              </div>
+              <div>
+                <div class="flex items-center gap-2">
+                  <h3 class="text-sm font-bold text-rose-900 dark:text-rose-100">Anomalies d'Inventaire à Arbitrer</h3>
+                  <span id="dashInvAnomaliesBadge" class="text-xs font-bold px-2.5 py-0.5 rounded-full bg-rose-100 text-rose-800 dark:bg-rose-900 dark:text-rose-200 border border-rose-300">0 anomalie</span>
+                </div>
+                <p class="text-xs text-rose-700/80 dark:text-rose-300/80">Désaccord entre les deux personnes ou écart avec le stock physique réel</p>
+              </div>
+            </div>
+            <button onclick="switchTab('inventory')" class="btn-touch px-3 py-1.5 rounded-xl bg-rose-600 hover:bg-rose-700 text-white font-semibold text-xs shadow-sm flex items-center gap-1.5 self-start sm:self-auto">
+              <i data-lucide="clipboard-check" class="w-4 h-4"></i>
+              <span>Ouvrir l'Inventaire Complet</span>
+            </button>
+          </div>
+
+          <div class="overflow-x-auto rounded-xl border border-rose-200 dark:border-rose-900/60">
+            <table class="w-full text-left text-xs sm:text-sm">
+              <thead class="bg-rose-100/70 dark:bg-rose-900/50 text-rose-900 dark:text-rose-200 uppercase text-[11px] font-bold">
+                <tr>
+                  <th class="p-3">Profilé / Réf</th>
+                  <th class="p-3 text-right">Stock Réel</th>
+                  <th class="p-3 text-center">Comptage 2 Personnes</th>
+                  <th class="p-3 text-center">Nature de l'Anomalie</th>
+                  <th class="p-3 text-right">Arbitrage & Décision</th>
+                </tr>
+              </thead>
+              <tbody id="dashboardInventoryAnomaliesBody" class="divide-y divide-rose-200 dark:divide-rose-900/40"></tbody>
+            </table>
+          </div>
+        </div>
+
+        <!-- BLOC DES ALERTES : STOCK BAS & CASIERS NON AFFECTÉS -->
+        <div id="alertsSection" class="glass-panel p-5 rounded-2xl border border-slate-200 dark:border-slate-800 space-y-4">
+          <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-slate-100 dark:border-slate-800 pb-3">
+            <div class="flex items-center gap-2">
+              <div class="p-2 rounded-xl bg-rose-100 dark:bg-rose-900/40 text-rose-600">
+                <i data-lucide="alert-octagon" class="w-5 h-5"></i>
+              </div>
+              <div>
+                <h3 class="text-sm font-bold text-slate-900 dark:text-slate-100">Alertes Réapprovisionnement & Emplacements</h3>
+                <p class="text-xs text-slate-500 dark:text-slate-400">Articles sous le seuil d'alerte ou en attente d'affectation de casier</p>
+              </div>
+            </div>
+            <div class="flex items-center gap-2">
+              <span id="alertsBadgeCount" class="text-xs font-bold px-3 py-1 rounded-full bg-rose-100 text-rose-700 dark:bg-rose-950 dark:text-rose-300">0 sous seuil</span>
+              <span id="unassignedBadgeCount" class="text-xs font-bold px-3 py-1 rounded-full bg-amber-100 text-amber-700 dark:bg-amber-950 dark:text-amber-300">0 sans casier</span>
+            </div>
+          </div>
+
+          <div class="overflow-x-auto rounded-xl border border-slate-200 dark:border-slate-800">
+            <table class="w-full text-left text-xs sm:text-sm">
+              <thead class="bg-slate-100 dark:bg-slate-800/80 text-slate-600 dark:text-slate-400 uppercase text-[11px] font-bold">
+                <tr>
+                  <th class="p-3">Profilé / Réf</th>
+                  <th class="p-3">Teinte / Laquage</th>
+                  <th class="p-3">Stock Réel</th>
+                  <th class="p-3">Seuil Alerte</th>
+                  <th class="p-3">Casier / Emplacement</th>
+                  <th class="p-3 text-right">Action Directe</th>
+                </tr>
+              </thead>
+              <tbody id="alertsTableBody" class="divide-y divide-slate-200 dark:divide-slate-800"></tbody>
+            </table>
+          </div>
+        </div>
+
+      </section>
+
+
+      <!-- ================= 2. SECTION STOCK (VUE GLOBALE & PMP) ================= -->
+      <section id="tab-stock" class="tab-content hidden space-y-5">
+        
+        <div class="glass-panel p-4 rounded-2xl border border-slate-200 dark:border-slate-800 space-y-4">
+          <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+            <div>
+              <h2 class="text-lg font-bold text-slate-900 dark:text-white flex items-center gap-2">
+                <i data-lucide="package" class="w-5 h-5 text-indigo-600"></i>
+                <span>Catalogue & Stock Menuiserie Aluminium</span>
+              </h2>
+              <p class="text-xs text-slate-500 dark:text-slate-400">Suivi strict au PMP (Prix Moyen Pondéré), gestion des casiers et codes-barres étiquettes</p>
+            </div>
+
+            <!-- Actions : Nouveau Produit & Switcher Vue -->
+            <div class="flex items-center gap-2 flex-wrap self-start sm:self-auto">
+              <button onclick="openNewCatalogModal()" class="btn-touch px-3 py-1.5 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white font-semibold text-xs shadow-sm flex items-center gap-1.5">
+                <i data-lucide="plus-circle" class="w-4 h-4"></i>
+                <span>Nouveau Profilé au Catalogue</span>
+              </button>
+
+              <div class="flex items-center gap-1 p-1 bg-slate-200/80 dark:bg-slate-800 rounded-xl">
+                <button id="viewBtnTable" onclick="setStockViewMode('table')" class="btn-touch px-3 py-1 rounded-lg text-xs font-semibold bg-white dark:bg-slate-900 text-slate-800 dark:text-white shadow-sm flex items-center gap-1.5">
+                  <i data-lucide="table" class="w-3.5 h-3.5"></i>
+                  <span>Tableau</span>
+                </button>
+                <button id="viewBtnCards" onclick="setStockViewMode('cards')" class="btn-touch px-3 py-1 rounded-lg text-xs font-semibold text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white flex items-center gap-1.5">
+                  <i data-lucide="grid" class="w-3.5 h-3.5"></i>
+                  <span>Cartes Mobile</span>
+                </button>
+              </div>
+            </div>
+          </div>
+
+          <!-- Filtres multicritères -->
+          <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3 pt-2">
+            <div class="relative">
+              <i data-lucide="search" class="w-4 h-4 absolute left-3 top-3.5 text-slate-400"></i>
+              <input type="text" id="stockSearchInput" oninput="debounceStockFilter()" placeholder="Rechercher référence, teinte..." class="w-full pl-9 pr-4 py-2.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-xs sm:text-sm focus:ring-2 focus:ring-indigo-500 outline-none">
+            </div>
+
+            <div>
+              <select id="stockFilterCategory" onchange="filterStock()" class="w-full px-3 py-2.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-xs sm:text-sm focus:ring-2 focus:ring-indigo-500 outline-none">
+                <option value="ALL">Toutes Catégories</option>
+              </select>
+            </div>
+
+            <div>
+              <select id="stockFilterGamme" onchange="filterStock()" class="w-full px-3 py-2.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-xs sm:text-sm focus:ring-2 focus:ring-indigo-500 outline-none">
+                <option value="ALL">Toutes Gammes</option>
+              </select>
+            </div>
+
+            <div>
+              <select id="stockFilterStatus" onchange="filterStock()" class="w-full px-3 py-2.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-xs sm:text-sm focus:ring-2 focus:ring-indigo-500 outline-none">
+                <option value="ALL">Tous Statuts</option>
+                <option value="EN_STOCK">✅ En stock suffisant</option>
+                <option value="STOCK_BAS">⚠️ Stock bas (≤ seuil)</option>
+                <option value="RUPTURE">⛔ Rupture totale (0)</option>
+                <option value="RESERVE">🔒 Avec stock réservé</option>
+              </select>
+            </div>
+
+            <div>
+              <select id="stockFilterChantier" onchange="filterStock()" class="w-full px-3 py-2.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-xs sm:text-sm font-semibold focus:ring-2 focus:ring-indigo-500 outline-none">
+                <option value="ALL">Tous Chantiers / Commandes</option>
+              </select>
+            </div>
+          </div>
+        </div>
+
+        <!-- TABLEAU DU CATALOGUE ET STOCK AVEC PMP (DZD) -->
+        <div id="stockTableView" class="glass-panel rounded-2xl border border-slate-200 dark:border-slate-800 overflow-hidden shadow-sm">
+          <!-- Barre de défilement horizontal synchronisée en haut -->
+          <div id="stockTopScrollWrapper" class="top-scroll-sync border-b border-slate-200 dark:border-slate-800 bg-slate-100/70 dark:bg-slate-800/70">
+            <div id="stockTopScrollContent" class="h-1"></div>
+          </div>
+          <div id="stockTableScrollWrapper" class="table-scroll-sync overflow-x-auto">
+            <table id="stockTable" class="w-full text-left text-xs">
+              <thead class="bg-slate-100/90 dark:bg-slate-800 text-slate-600 dark:text-slate-300 font-bold uppercase text-[11px] border-b border-slate-200 dark:border-slate-700">
+                <tr>
+                  <th class="py-2.5 px-3">Article & Profilé</th>
+                  <th class="py-2.5 px-3">Série / Catégorie</th>
+                  <th class="py-2.5 px-3">Teinte / Laquage</th>
+                  <th class="py-2.5 px-2.5 text-right">Stock Réel</th>
+                  <th class="py-2.5 px-2 text-right">Réservé</th>
+                  <th class="py-2.5 px-2.5 text-right">Disponible</th>
+                  <th class="py-2.5 px-2 text-right">Seuil</th>
+                  <th class="py-2.5 px-2.5 text-right">PMP (DZD)</th>
+                  <th class="py-2.5 px-2.5 text-right">Dernier Prix</th>
+                  <th class="py-2.5 px-2.5">Casier</th>
+                  <th class="py-2.5 px-2 text-center">Statut</th>
+                  <th class="py-2.5 px-2 text-center">Actions</th>
+                </tr>
+              </thead>
+              <tbody id="stockTableBody" class="divide-y divide-slate-200 dark:divide-slate-800"></tbody>
+            </table>
+          </div>
+        </div>
+
+        <!-- VUE CARTES MOBILES SYNTHÉTIQUES (Optimisée <= 430px) -->
+        <div id="stockCardsView" class="hidden grid grid-cols-1 md:grid-cols-2 gap-4"></div>
+
+      </section>
+
+
+      <!-- ================= 3. SECTION ACTIONS (CRÉER / STOCKER / DESTOCKER / RESERVER) ================= -->
+      <section id="tab-actions" class="tab-content hidden space-y-6">
+        
+        <!-- SUB-NAVIGATION 4 ACTIONS -->
+        <div class="glass-panel p-2.5 rounded-2xl border border-slate-200 dark:border-slate-800">
+          <div class="grid grid-cols-2 sm:grid-cols-4 gap-2">
+            <button onclick="selectActionSubTab('creer')" id="btnActionCreer" class="btn-touch py-3 px-3 rounded-xl font-bold text-xs sm:text-sm flex items-center justify-center gap-2 bg-indigo-600 text-white shadow-md shadow-indigo-600/20 transition-all">
+              <i data-lucide="sparkles" class="w-4 h-4 text-amber-300"></i>
+              <span>✨ CRÉER</span>
+            </button>
+
+            <button onclick="selectActionSubTab('stocker')" id="btnActionStocker" class="btn-touch py-3 px-3 rounded-xl font-bold text-xs sm:text-sm flex items-center justify-center gap-2 bg-white dark:bg-slate-900 text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 border border-slate-200 dark:border-slate-800 transition-all">
+              <i data-lucide="arrow-down-circle" class="w-4 h-4 text-emerald-500"></i>
+              <span>📥 STOCKER</span>
+            </button>
+
+            <button onclick="selectActionSubTab('destocker')" id="btnActionDestocker" class="btn-touch py-3 px-3 rounded-xl font-bold text-xs sm:text-sm flex items-center justify-center gap-2 bg-white dark:bg-slate-900 text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 border border-slate-200 dark:border-slate-800 transition-all">
+              <i data-lucide="arrow-up-circle" class="w-4 h-4 text-rose-500"></i>
+              <span>📤 DESTOCKER</span>
+            </button>
+
+            <button onclick="selectActionSubTab('reserver')" id="btnActionReserver" class="btn-touch py-3 px-3 rounded-xl font-bold text-xs sm:text-sm flex items-center justify-center gap-2 bg-white dark:bg-slate-900 text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 border border-slate-200 dark:border-slate-800 transition-all">
+              <i data-lucide="lock" class="w-4 h-4 text-amber-500"></i>
+              <span>🔒 RESERVER</span>
+            </button>
+          </div>
+        </div>
+
+
+        <!-- ================= 1. FORMULAIRE [ ✨ CRÉER ] : Créer au Catalogue Maître ================= -->
+        <div id="actionFormCreer" class="glass-panel p-5 sm:p-6 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm space-y-5">
+          <div class="border-b border-slate-200 dark:border-slate-800 pb-3">
+            <h3 class="text-base font-bold text-indigo-600 dark:text-indigo-400 flex items-center gap-2">
+              <i data-lucide="sparkles" class="w-5 h-5 text-amber-500"></i>
+              <span>Créer un Nouvel Article au Catalogue Maître</span>
+            </h3>
+            <p class="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
+              Règle stricte anti-doublon : la combinaison <b>[Référence + Teinte RAL]</b> doit être unique. Tout article créé pourra ensuite être approvisionné et déstocké.
+            </p>
+          </div>
+
+          <form id="formCreerArticle" onsubmit="handleCreerArticleSubmit(event)" class="space-y-4">
+            
+            <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <div>
+                <label class="block text-xs font-semibold mb-1 text-slate-700 dark:text-slate-300">Code Référence *</label>
+                <input type="text" id="actionNewRef" required placeholder="ex: HPS-40 ou EX-2001" class="w-full px-3 py-2.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-xs sm:text-sm font-mono font-bold uppercase focus:ring-2 focus:ring-indigo-500 outline-none">
+              </div>
+
+              <div>
+                <label class="block text-xs font-semibold mb-1 text-slate-700 dark:text-slate-300">Désignation complète *</label>
+                <input type="text" id="actionNewDesignation" required placeholder="ex: Profilé Dormant Alu 40mm RPT" class="w-full px-3 py-2.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-xs sm:text-sm focus:ring-2 focus:ring-indigo-500 outline-none">
+              </div>
+            </div>
+
+            <div class="grid grid-cols-1 sm:grid-cols-3 gap-4">
+              <div>
+                <label class="block text-xs font-semibold mb-1 text-slate-700 dark:text-slate-300">Catégorie *</label>
+                <select id="actionNewCategory" required class="w-full px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-xs focus:ring-2 focus:ring-indigo-500 outline-none"></select>
+              </div>
+
+              <div>
+                <label class="block text-xs font-semibold mb-1 text-slate-700 dark:text-slate-300">Série / Gamme *</label>
+                <select id="actionNewGamme" required class="w-full px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-xs focus:ring-2 focus:ring-indigo-500 outline-none"></select>
+              </div>
+
+              <div>
+                <label class="block text-xs font-semibold mb-1 text-slate-700 dark:text-slate-300">Unité de mesure *</label>
+                <select id="actionNewUnit" required class="w-full px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-xs focus:ring-2 focus:ring-indigo-500 outline-none"></select>
+              </div>
+            </div>
+
+            <!-- NUANCIER RAL INTERACTIF AVEC CODE RAL DANS LES PASTILLES -->
+            <div class="p-3.5 rounded-xl bg-slate-50 dark:bg-slate-800/40 border border-slate-200 dark:border-slate-700/60 space-y-2.5">
+              <div class="flex items-center justify-between">
+                <label class="text-xs font-bold text-slate-800 dark:text-slate-200 flex items-center gap-1.5">
+                  <i data-lucide="palette" class="w-4 h-4 text-indigo-500"></i>
+                  <span>Nuancier RAL Menuiserie Alu & Volets (Cliquer sur une pastille) *</span>
+                </label>
+                <span id="selectedRalDisplay" class="text-xs font-mono font-bold px-2 py-0.5 rounded bg-indigo-100 text-indigo-800 dark:bg-indigo-900 dark:text-indigo-200">
+                  RAL 7024
+                </span>
+              </div>
+
+              <!-- Pastilles générées dynamiquement depuis les couleurs créées dans Paramètres -->
+              <div class="grid grid-cols-2 sm:grid-cols-4 md:grid-cols-6 gap-2" id="ralSwatchesContainer">
+                <!-- Rempli par renderCreationColorSwatches() depuis AppState.colors -->
+              </div>
+
+              <!-- Libellé de couleur & variables cachées -->
+              <div class="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-1">
+                <div>
+                  <label class="block text-[11px] font-semibold text-slate-600 dark:text-slate-400 mb-1">Coloris sélectionné *</label>
+                  <input type="text" id="actionNewColor" required value="RAL 7024" class="w-full px-3 py-1.5 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-xs font-semibold focus:ring-1 focus:ring-indigo-500 outline-none">
+                  <input type="hidden" id="actionNewRalCode" value="RAL 7024">
+                  <input type="hidden" id="actionNewColorHex" value="#474a51">
+                </div>
+
+                <div>
+                  <label class="block text-[11px] font-semibold text-slate-600 dark:text-slate-400 mb-1">Fournisseur attitré</label>
+                  <input type="text" id="actionNewSupplier" placeholder="ex: AluMaghreb Profils" class="w-full px-3 py-1.5 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-xs focus:ring-1 focus:ring-indigo-500 outline-none">
+                </div>
+              </div>
+            </div>
+
+            <div class="grid grid-cols-1 sm:grid-cols-3 gap-4">
+              <div>
+                <label class="block text-xs font-semibold mb-1 text-slate-700 dark:text-slate-300">Seuil d'Alerte Stock Bas *</label>
+                <input type="number" id="actionNewThreshold" required min="0" value="10" class="w-full px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-xs font-bold text-amber-600 focus:ring-2 focus:ring-indigo-500 outline-none">
+              </div>
+
+              <div>
+                <label class="block text-xs font-semibold mb-1 text-slate-700 dark:text-slate-300">Case Atelier (P-xx profilés / A-xx acc.)</label>
+                <select id="actionNewLocation" class="w-full px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-xs focus:ring-2 focus:ring-indigo-500 outline-none">
+                  <option value="EN_ATTENTE_AFFECTATION">⚠️ EN_ATTENTE_AFFECTATION</option>
+                </select>
+              </div>
+
+              <div>
+                <label class="block text-xs font-semibold mb-1 text-slate-700 dark:text-slate-300">Image de l'article (Upload local)</label>
+                <div class="flex items-center gap-2">
+                  <label class="cursor-pointer flex items-center gap-1.5 px-3 py-2 rounded-xl border border-dashed border-indigo-400 dark:border-indigo-600 bg-indigo-50/50 dark:bg-indigo-950/30 text-indigo-700 dark:text-indigo-300 hover:bg-indigo-100/50 text-xs font-semibold transition-all">
+                    <i data-lucide="upload-cloud" class="w-4 h-4"></i>
+                    <span id="uploadImageLabel">Choisir un fichier</span>
+                    <input type="file" id="actionNewImageFile" accept="image/*" class="hidden" onchange="handleArticleImageUpload(event)">
+                  </label>
+                  <div id="imagePreviewContainer" class="hidden items-center gap-2">
+                    <img id="imagePreviewThumb" src="" class="w-8 h-8 rounded-lg object-cover border border-slate-200 dark:border-slate-700" alt="">
+                    <button type="button" onclick="cancelUploadedImage()" class="text-rose-500 hover:text-rose-700 text-xs font-bold px-1" title="Supprimer">✕</button>
+                  </div>
+                </div>
+                <input type="hidden" id="actionNewImage" value="">
+              </div>
+            </div>
+
+            <!-- Stock initial & Prix unitaire facultatifs -->
+            <div class="grid grid-cols-1 sm:grid-cols-2 gap-4 p-3 rounded-xl bg-slate-50 dark:bg-slate-800/30 border border-slate-100 dark:border-slate-800">
+              <div>
+                <label class="block text-xs font-semibold mb-1 text-slate-700 dark:text-slate-300">Stock initial à l'ouverture (Facultatif)</label>
+                <input type="number" id="actionNewInitialQty" min="0" step="any" value="0" class="w-full px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-xs font-bold focus:ring-2 focus:ring-indigo-500 outline-none">
+              </div>
+
+              <div>
+                <label class="block text-xs font-semibold mb-1 text-slate-700 dark:text-slate-300">Prix unitaire initial (DZD HT)</label>
+                <input type="number" id="actionNewPrice" min="0" step="any" value="0" class="w-full px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-xs font-bold text-emerald-600 focus:ring-2 focus:ring-indigo-500 outline-none">
+              </div>
+            </div>
+
+            <div class="pt-2">
+              <button type="submit" class="btn-touch w-full py-3.5 px-6 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-sm shadow-md shadow-indigo-600/30 flex items-center justify-center gap-2">
+                <i data-lucide="sparkles" class="w-5 h-5 text-amber-300"></i>
+                <span>Enregistrer l'Article au Catalogue Maître</span>
+              </button>
+            </div>
+
+          </form>
+        </div>
+
+
+        <!-- ================= 2. FORMULAIRE [ 📥 STOCKER ] : Entrée ultra-rapide (Réf, Couleur, Fournisseur, Quantité, Prix) ================= -->
+        <div id="actionFormStocker" class="hidden glass-panel p-5 sm:p-6 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm space-y-5">
+          <div class="border-b border-slate-200 dark:border-slate-800 pb-3 flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+            <div>
+              <h3 class="text-base font-bold text-emerald-600 dark:text-emerald-400 flex items-center gap-2">
+                <i data-lucide="download" class="w-5 h-5"></i>
+                <span>Entrée en Stock Atelier (Recalcul automatique du PMP)</span>
+              </h3>
+              <p class="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
+                Champs requis : <b>Référence, Couleur, Fournisseur, Quantité et Prix</b>. Aucun article inexistant ne peut être stocké. Pas d'opérateur.
+              </p>
+            </div>
+            <button type="button" onclick="selectActionSubTab('creer')" class="text-xs font-bold text-indigo-600 hover:underline flex items-center gap-1 self-start sm:self-auto">
+              <i data-lucide="plus-circle" class="w-3.5 h-3.5"></i>
+              <span>Article non présent ? Créer d'abord</span>
+            </button>
+          </div>
+
+          <form id="formStocker" onsubmit="handleStockInSubmit(event)" class="space-y-4">
+            
+            <!-- RECHERCHE OU COLLER LA RÉFÉRENCE -->
+            <div>
+              <label class="block text-xs font-semibold mb-1 text-slate-700 dark:text-slate-300">Rechercher ou coller la référence du profilé / volet *</label>
+              <div class="relative">
+                <input type="text" id="stockInSearchRef" oninput="onStockInSearchRef(this.value)" list="stockInRefDatalist" placeholder="🔍 Taper ou coller la référence (ex: HPS-40, EX-2001, OUV-ALU-55)..." class="w-full pl-3 pr-10 py-2.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-xs sm:text-sm font-mono font-bold uppercase focus:ring-2 focus:ring-emerald-500 outline-none">
+                <datalist id="stockInRefDatalist"></datalist>
+                <div class="absolute right-3 top-2.5 text-slate-400 pointer-events-none">
+                  <i data-lucide="search" class="w-4 h-4"></i>
+                </div>
+              </div>
+
+              <!-- Message d'alerte si l'article n'existe pas dans le catalogue maître -->
+              <div id="stockInNotFoundAlert" class="hidden mt-2 p-3 rounded-xl bg-rose-50 dark:bg-rose-950/60 border border-rose-200 dark:border-rose-900/60 text-rose-700 dark:text-rose-300 text-xs flex items-center justify-between gap-2">
+                <div class="flex items-center gap-2">
+                  <i data-lucide="alert-octagon" class="w-4 h-4 text-rose-600 shrink-0"></i>
+                  <span><b>Article inexistant :</b> Cette référence n'existe pas dans le Catalogue Maître. Il est interdit d'enregistrer un stock orphelin.</span>
+                </div>
+                <button type="button" onclick="redirectCreerWithRef()" class="px-2.5 py-1 rounded-lg bg-rose-600 hover:bg-rose-700 text-white font-bold text-xs shrink-0">
+                  Créer maintenant
+                </button>
+              </div>
+
+              <!-- Info article trouvé -->
+              <div id="stockInMatchedInfo" class="hidden mt-2 p-2.5 rounded-xl bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-100 dark:border-emerald-900/40 text-emerald-900 dark:text-emerald-200 text-xs">
+                <div class="font-bold flex items-center gap-2">
+                  <span id="stockInMatchedName">Désignation du profilé</span>
+                  <span id="stockInMatchedCategory" class="px-2 py-0.5 rounded-full text-[10px] font-semibold bg-emerald-200/60 text-emerald-800 dark:bg-emerald-800 dark:text-emerald-100">Catégorie</span>
+                </div>
+              </div>
+            </div>
+
+            <!-- DÉCLINAISON COULEUR & FOURNISSEUR -->
+            <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <div>
+                <label class="block text-xs font-semibold mb-1 text-slate-700 dark:text-slate-300">Teinte / Finition existante *</label>
+                <select id="stockInColorSelect" required onchange="onStockInColorChange()" class="w-full px-3 py-2.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-xs sm:text-sm font-semibold focus:ring-2 focus:ring-emerald-500 outline-none">
+                  <option value="">-- Sélectionner d'abord une référence valide --</option>
+                </select>
+              </div>
+
+              <div>
+                <label class="block text-xs font-semibold mb-1 text-slate-700 dark:text-slate-300">Fournisseur *</label>
+                <input type="text" id="stockInSupplier" required placeholder="ex: AluMaghreb Profils" class="w-full px-3 py-2.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-xs sm:text-sm font-medium focus:ring-2 focus:ring-emerald-500 outline-none">
+              </div>
+            </div>
+
+            <!-- QUANTITÉ & PRIX D'ACHAT UNITAIRE (DZD) -->
+            <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <div>
+                <label class="block text-xs font-semibold mb-1 text-slate-700 dark:text-slate-300">Quantité de barres / unités entrantes *</label>
+                <input type="number" id="stockInQty" required min="0.1" step="any" oninput="updateStockInPmpPreview()" placeholder="ex: 50" class="w-full px-3 py-2.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-sm font-bold text-indigo-600 focus:ring-2 focus:ring-emerald-500 outline-none">
+              </div>
+
+              <div>
+                <label class="block text-xs font-semibold mb-1 text-slate-700 dark:text-slate-300">Prix d'Achat Unitaire (DZD HT) *</label>
+                <input type="number" id="stockInPrice" required min="0" step="any" oninput="updateStockInPmpPreview()" placeholder="ex: 8200.00" class="w-full px-3 py-2.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-sm font-bold text-emerald-600 focus:ring-2 focus:ring-emerald-500 outline-none">
+                <span class="text-[11px] text-slate-400">Si le prix est à 0 DZD, une confirmation explicite sera demandée.</span>
+              </div>
+            </div>
+
+            <!-- PRÉVISUALISATION DYNAMIQUE DU PMP -->
+            <div id="stockInPmpPreviewCard" class="p-3.5 rounded-xl bg-slate-50 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-700 text-xs space-y-1">
+              <div class="font-bold text-slate-700 dark:text-slate-300 flex items-center justify-between">
+                <span>Simulation Calcul PMP :</span>
+                <span id="previewFormulaText" class="text-[11px] font-normal text-slate-400">PMP = ((Stock × PMP) + (Qté × Prix)) / Total</span>
+              </div>
+              <div class="grid grid-cols-2 sm:grid-cols-4 gap-2 pt-1 font-mono">
+                <div>Stock actuel: <b id="previewStockActuel">0</b></div>
+                <div>PMP actuel: <b id="previewPmpActuel" class="text-slate-700 dark:text-slate-300">0,00 DZD</b></div>
+                <div>Nouveau Stock: <b id="previewStockNouveau" class="text-indigo-600">0</b></div>
+                <div>Nouveau PMP: <b id="previewPmpNouveau" class="text-emerald-600 font-extrabold">0,00 DZD</b></div>
+              </div>
+            </div>
+
+            <div>
+              <label class="block text-xs font-semibold mb-1 text-slate-700 dark:text-slate-300">Notes / Référence Bon de Livraison (Optionnel)</label>
+              <input type="text" id="stockInNotes" placeholder="ex: BL n° 8841 AluMaghreb livraison atelier" class="w-full px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-xs focus:ring-2 focus:ring-emerald-500 outline-none">
+            </div>
+
+            <div class="pt-2">
+              <button type="submit" class="btn-touch w-full py-3.5 px-6 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-sm shadow-md shadow-emerald-600/30 flex items-center justify-center gap-2">
+                <i data-lucide="check" class="w-5 h-5"></i>
+                <span>Valider l'Entrée en Stock & Recalculer le PMP</span>
+              </button>
+            </div>
+
+          </form>
+        </div>
+
+
+        <!-- ================= 3. FORMULAIRE [ 📤 DESTOCKER ] : Sortie Atelier Multi-Articles ================= -->
+        <div id="actionFormDestocker" class="hidden glass-panel p-5 sm:p-6 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm space-y-5">
+          <div class="border-b border-slate-200 dark:border-slate-800 pb-3 flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+            <div>
+              <h3 class="text-base font-bold text-rose-600 dark:text-rose-400 flex items-center gap-2">
+                <i data-lucide="upload" class="w-5 h-5"></i>
+                <span>Déstockage Physique / Sortie Atelier (Multi-Articles)</span>
+              </h3>
+              <p class="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
+                Assignez plusieurs articles à un même lot, commande ou débit atelier libre. Contrôle strict anti-stock négatif.
+              </p>
+            </div>
+            <span class="text-xs font-semibold px-2.5 py-1 rounded-full bg-rose-50 text-rose-700 dark:bg-rose-950/60 dark:text-rose-300 border border-rose-200 dark:border-rose-900 self-start sm:self-auto">
+              Mode Multi-Articles
+            </span>
+          </div>
+
+          <form id="formDestocker" onsubmit="handleDestockSubmit(event)" class="space-y-4">
+            
+            <div class="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
+              
+              <!-- COLONNE GAUCHE (7 cols) : Paramètres communs + Zone d'ajout des articles -->
+              <div class="lg:col-span-7 space-y-4">
+                
+                <!-- BLOC 1 : AFFECTATION COMMUNE (COMMANDE / LOT / ATELIER) -->
+                <div class="p-4 rounded-xl bg-slate-50/70 dark:bg-slate-800/40 border border-slate-200 dark:border-slate-700/60 space-y-3">
+                  <div class="text-xs font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400 flex items-center gap-1.5">
+                    <i data-lucide="clipboard-list" class="w-3.5 h-3.5 text-indigo-500"></i>
+                    <span>1. Affectation Commune (Chantier, Lot ou Atelier)</span>
+                  </div>
+
+                  <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    <div>
+                      <label class="block text-xs font-semibold mb-1 text-slate-700 dark:text-slate-300">Commande assignée</label>
+                      <select id="destockOrderSelect" onchange="onDestockOrderSelectChange()" class="w-full px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-xs sm:text-sm focus:ring-2 focus:ring-rose-500 outline-none">
+                        <option value="NONE">-- Non assigné à une commande (Débit libre) --</option>
+                      </select>
+                    </div>
+
+                    <div>
+                      <label class="block text-xs font-semibold mb-1 text-slate-700 dark:text-slate-300">N° de Lot (Saisie manuelle)</label>
+                      <input type="text" id="destockLotNumber" placeholder="ex: LOT-01, Lot séjour, Façade..." class="w-full px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-xs sm:text-sm focus:ring-2 focus:ring-rose-500 outline-none">
+                    </div>
+                  </div>
+
+                  <!-- Champ de texte pour les sorties non assignées à une commande -->
+                  <div id="destockUnassignedGroup">
+                    <label class="block text-xs font-semibold mb-1 text-slate-700 dark:text-slate-300">Motif / Destination si non assigné à une commande</label>
+                    <input type="text" id="destockUnassignedReason" placeholder="ex: Chutes atelier, SAV, Coupe d'essai, Prototype..." class="w-full px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-xs sm:text-sm focus:ring-2 focus:ring-rose-500 outline-none">
+                  </div>
+
+                  <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    <div>
+                      <label class="block text-xs font-semibold mb-1 text-slate-700 dark:text-slate-300">Opérateur responsable</label>
+                      <input type="text" id="destockOperator" value="Atelier" required placeholder="ex: Atelier" class="w-full px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-xs sm:text-sm font-semibold focus:ring-2 focus:ring-rose-500 outline-none">
+                    </div>
+
+                    <div>
+                      <label class="block text-xs font-semibold mb-1 text-slate-700 dark:text-slate-300">Notes complémentaires</label>
+                      <input type="text" id="destockNotes" placeholder="ex: Débit profilés pour séjour" class="w-full px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-xs sm:text-sm focus:ring-2 focus:ring-rose-500 outline-none">
+                    </div>
+                  </div>
+                </div>
+
+                <!-- BLOC 2 : SÉLECTION DE L'ARTICLE & QUANTITÉ (SEULS DUPLIQUÉS) -->
+                <div class="p-4 rounded-xl bg-white dark:bg-slate-900 border-2 border-rose-100 dark:border-rose-950/60 shadow-sm space-y-3">
+                  <div class="flex items-center justify-between">
+                    <div class="text-xs font-bold uppercase tracking-wider text-rose-600 dark:text-rose-400 flex items-center gap-1.5">
+                      <i data-lucide="package-minus" class="w-3.5 h-3.5"></i>
+                      <span>2. Choisir un article à déstocker</span>
+                    </div>
+                    <span class="text-[11px] text-slate-400 font-medium">Ajout successif d'articles</span>
+                  </div>
+
+                  <!-- RECHERCHE / COLLER RÉFÉRENCE -->
+                  <div>
+                    <label class="block text-xs font-semibold mb-1 text-slate-700 dark:text-slate-300">Rechercher ou coller la référence</label>
+                    <div class="relative">
+                      <input type="text" id="destockSearchRef" oninput="onDestockSearchRef(this.value)" placeholder="🔍 Coller ou taper la référence (ex: HPS-40, EX-2001)..." class="w-full pl-3 pr-10 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50/50 dark:bg-slate-800/50 text-xs sm:text-sm font-mono font-bold uppercase focus:ring-2 focus:ring-rose-500 outline-none">
+                      <div class="absolute right-3 top-2.5 text-slate-400 pointer-events-none">
+                        <i data-lucide="search" class="w-4 h-4"></i>
+                      </div>
+                    </div>
+                  </div>
+
+                  <!-- Sélection variante & Quantité -->
+                  <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    <div>
+                      <label class="block text-xs font-semibold mb-1 text-slate-700 dark:text-slate-300">Profilé / Article à sortir *</label>
+                      <select id="destockVariantSelect" onchange="onDestockVariantChange()" class="w-full px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-xs sm:text-sm focus:ring-2 focus:ring-rose-500 outline-none">
+                        <option value="">-- Sélectionner dans le stock --</option>
+                      </select>
+                      <div id="destockStockInfo" class="text-xs mt-1 text-slate-500"></div>
+                    </div>
+
+                    <div>
+                      <label class="block text-xs font-semibold mb-1 text-slate-700 dark:text-slate-300">Quantité à déstocker *</label>
+                      <input type="number" id="destockQty" min="0.1" step="any" placeholder="ex: 10" class="w-full px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-sm font-bold text-rose-600 focus:ring-2 focus:ring-rose-500 outline-none">
+                    </div>
+                  </div>
+
+                  <!-- Bouton d'ajout à la liste -->
+                  <div class="pt-1">
+                    <button type="button" onclick="addDestockItemToList()" class="btn-touch w-full py-2.5 px-4 rounded-xl bg-slate-900 hover:bg-slate-800 dark:bg-slate-800 dark:hover:bg-slate-700 text-white font-bold text-xs sm:text-sm flex items-center justify-center gap-2 shadow-sm transition-all">
+                      <i data-lucide="plus-circle" class="w-4 h-4 text-emerald-400"></i>
+                      <span>➕ Ajouter cet article au lot de déstockage</span>
+                    </button>
+                  </div>
+                </div>
+
+              </div>
+
+              <!-- COLONNE DROITE (5 cols) : Panneau pliable de la liste des articles ajoutés -->
+              <div class="lg:col-span-5">
+                <div class="glass-panel p-4 rounded-2xl border border-slate-200 dark:border-slate-700/80 bg-white/70 dark:bg-slate-900/70 shadow-sm sticky top-24 space-y-3">
+                  
+                  <!-- En-tête de la liste à droite -->
+                  <div class="flex items-center justify-between pb-2 border-b border-slate-200 dark:border-slate-800">
+                    <div class="flex items-center gap-2">
+                      <div class="w-7 h-7 rounded-lg bg-rose-100 dark:bg-rose-950/80 text-rose-600 flex items-center justify-center font-bold">
+                        <i data-lucide="list-checks" class="w-4 h-4"></i>
+                      </div>
+                      <div>
+                        <h4 class="font-bold text-xs sm:text-sm text-slate-900 dark:text-white flex items-center gap-1.5">
+                          <span>Articles ajoutés</span>
+                          <span id="destockItemsBadgeCount" class="px-2 py-0.5 rounded-full text-[10px] font-bold bg-rose-100 text-rose-700 dark:bg-rose-900/60 dark:text-rose-300">0</span>
+                        </h4>
+                        <p class="text-[11px] text-slate-500" id="destockItemsSummaryText">0 barre(s) au total</p>
+                      </div>
+                    </div>
+
+                    <div class="flex items-center gap-1">
+                      <button type="button" onclick="clearDestockItemsList()" id="btnDestockClear" class="hidden text-[11px] text-rose-600 hover:underline px-2 py-1 font-semibold" title="Vider la liste">
+                        Vider tout
+                      </button>
+                      <!-- Bouton Pliable / Dépliable -->
+                      <button type="button" onclick="toggleDestockListCollapse()" class="p-1.5 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-500 transition-colors" title="Plier / Déplier la liste">
+                        <i id="destockCollapseIcon" data-lucide="chevron-up" class="w-4 h-4 transition-transform duration-200"></i>
+                      </button>
+                    </div>
+                  </div>
+
+                  <!-- Corps pliable de la liste -->
+                  <div id="destockCollapsibleBody" class="space-y-2 transition-all duration-200">
+                    
+                    <div id="destockItemsList" class="space-y-2 max-h-[380px] overflow-y-auto pr-1">
+                      <!-- Message si vide -->
+                      <div id="destockEmptyMsg" class="p-6 rounded-xl border border-dashed border-slate-200 dark:border-slate-700 text-center text-slate-400 text-xs flex flex-col items-center gap-2">
+                        <i data-lucide="package-plus" class="w-8 h-8 text-slate-300 dark:text-slate-600"></i>
+                        <span>Aucun article dans ce lot.<br>Renseignez un profilé et sa quantité à gauche, puis cliquez sur <b>Ajouter</b>.</span>
+                      </div>
+                    </div>
+
+                  </div>
+
+                  <!-- Bouton de validation principale -->
+                  <div class="pt-2 border-t border-slate-200 dark:border-slate-800">
+                    <button type="submit" id="btnSubmitDestock" class="btn-touch w-full py-3.5 px-4 rounded-xl bg-rose-600 hover:bg-rose-700 text-white font-bold text-xs sm:text-sm shadow-md shadow-rose-600/30 flex items-center justify-center gap-2 transition-all">
+                      <i data-lucide="arrow-up-right" class="w-4 h-4"></i>
+                      <span id="destockSubmitBtnLabel">Valider le Déstockage (0 article)</span>
+                    </button>
+                  </div>
+
+                </div>
+              </div>
+
+            </div>
+
+          </form>
+        </div>
+
+
+        <!-- ================= 4. FORMULAIRE [ 🔒 RESERVER ] : Réservation Commande / Lot Multi-Articles ================= -->
+        <div id="actionFormReserver" class="hidden glass-panel p-5 sm:p-6 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm space-y-5">
+          <div class="border-b border-slate-200 dark:border-slate-800 pb-3 flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+            <div>
+              <h3 class="text-base font-bold text-amber-600 dark:text-amber-400 flex items-center gap-2">
+                <i data-lucide="lock" class="w-5 h-5"></i>
+                <span>Réservation de Profilés pour Commande / Lot (Multi-Articles)</span>
+              </h3>
+              <p class="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
+                Bloquez plusieurs profilés pour une commande sans réduire le stock physique en atelier jusqu'au débit réel.
+              </p>
+            </div>
+            <span class="text-xs font-semibold px-2.5 py-1 rounded-full bg-amber-50 text-amber-700 dark:bg-amber-950/60 dark:text-amber-300 border border-amber-200 dark:border-amber-900 self-start sm:self-auto">
+              Mode Multi-Articles
+            </span>
+          </div>
+
+          <form id="formReserver" onsubmit="handleReserveSubmit(event)" class="space-y-4">
+            
+            <div class="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
+              
+              <!-- COLONNE GAUCHE (7 cols) : Paramètres communs + Zone d'ajout des articles -->
+              <div class="lg:col-span-7 space-y-4">
+                
+                <!-- BLOC 1 : AFFECTATION COMMUNE (COMMANDE / CHANTIER / LOT) -->
+                <div class="p-4 rounded-xl bg-slate-50/70 dark:bg-slate-800/40 border border-slate-200 dark:border-slate-700/60 space-y-3">
+                  <div class="text-xs font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400 flex items-center gap-1.5">
+                    <i data-lucide="bookmark" class="w-3.5 h-3.5 text-amber-500"></i>
+                    <span>1. Commande & Lot à réserver</span>
+                  </div>
+
+                  <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    <div>
+                      <label class="block text-xs font-semibold mb-1 text-slate-700 dark:text-slate-300">Commande / Chantier *</label>
+                      <select id="reserveOrderSelect" required class="w-full px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-xs sm:text-sm font-bold focus:ring-2 focus:ring-amber-500 outline-none"></select>
+                    </div>
+
+                    <div>
+                      <label class="block text-xs font-semibold mb-1 text-slate-700 dark:text-slate-300">N° de Lot (Saisie manuelle)</label>
+                      <input type="text" id="reserveLotNumber" placeholder="ex: LOT-01, Lot atelier, Cuisine..." class="w-full px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-xs sm:text-sm focus:ring-2 focus:ring-amber-500 outline-none">
+                    </div>
+                  </div>
+
+                  <div>
+                    <label class="block text-xs font-semibold mb-1 text-slate-700 dark:text-slate-300">Notes / Informations de réservation</label>
+                    <input type="text" id="reserveNotes" placeholder="ex: Bloqué pour débit atelier semaine prochaine" class="w-full px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-xs sm:text-sm focus:ring-2 focus:ring-amber-500 outline-none">
+                  </div>
+                </div>
+
+                <!-- BLOC 2 : SÉLECTION DE L'ARTICLE & QUANTITÉ (SEULS DUPLIQUÉS) -->
+                <div class="p-4 rounded-xl bg-white dark:bg-slate-900 border-2 border-amber-100 dark:border-amber-950/60 shadow-sm space-y-3">
+                  <div class="flex items-center justify-between">
+                    <div class="text-xs font-bold uppercase tracking-wider text-amber-600 dark:text-amber-400 flex items-center gap-1.5">
+                      <i data-lucide="package-search" class="w-3.5 h-3.5"></i>
+                      <span>2. Choisir un profilé à réserver</span>
+                    </div>
+                    <span class="text-[11px] text-slate-400 font-medium">Ajout successif d'articles</span>
+                  </div>
+
+                  <!-- RECHERCHE / COLLER RÉFÉRENCE -->
+                  <div>
+                    <label class="block text-xs font-semibold mb-1 text-slate-700 dark:text-slate-300">Rechercher ou coller la référence à réserver</label>
+                    <div class="relative">
+                      <input type="text" id="reserveSearchRef" oninput="onReserveSearchRef(this.value)" placeholder="🔍 Coller ou taper la référence (ex: HPS-40, EX-2001)..." class="w-full pl-3 pr-10 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50/50 dark:bg-slate-800/50 text-xs sm:text-sm font-mono font-bold uppercase focus:ring-2 focus:ring-amber-500 outline-none">
+                      <div class="absolute right-3 top-2.5 text-slate-400 pointer-events-none">
+                        <i data-lucide="search" class="w-4 h-4"></i>
+                      </div>
+                    </div>
+                  </div>
+
+                  <!-- Sélection variante & Quantité -->
+                  <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    <div>
+                      <label class="block text-xs font-semibold mb-1 text-slate-700 dark:text-slate-300">Profilé & Teinte à bloquer *</label>
+                      <select id="reserveVariantSelect" onchange="onReserveVariantChange()" class="w-full px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-xs sm:text-sm focus:ring-2 focus:ring-amber-500 outline-none">
+                        <option value="">-- Choisir la référence alu --</option>
+                      </select>
+                      <div id="reserveStockInfo" class="text-xs mt-1 text-slate-500"></div>
+                    </div>
+
+                    <div>
+                      <label class="block text-xs font-semibold mb-1 text-slate-700 dark:text-slate-300">Quantité de barres à réserver *</label>
+                      <input type="number" id="reserveQty" min="0.1" step="any" placeholder="ex: 40" class="w-full px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-sm font-bold text-amber-600 focus:ring-2 focus:ring-amber-500 outline-none">
+                    </div>
+                  </div>
+
+                  <!-- Bouton d'ajout à la liste -->
+                  <div class="pt-1">
+                    <button type="button" onclick="addReserveItemToList()" class="btn-touch w-full py-2.5 px-4 rounded-xl bg-slate-900 hover:bg-slate-800 dark:bg-slate-800 dark:hover:bg-slate-700 text-white font-bold text-xs sm:text-sm flex items-center justify-center gap-2 shadow-sm transition-all">
+                      <i data-lucide="plus-circle" class="w-4 h-4 text-amber-400"></i>
+                      <span>➕ Ajouter cet article à la réservation</span>
+                    </button>
+                  </div>
+                </div>
+
+              </div>
+
+              <!-- COLONNE DROITE (5 cols) : Panneau pliable de la liste des réservations -->
+              <div class="lg:col-span-5">
+                <div class="glass-panel p-4 rounded-2xl border border-slate-200 dark:border-slate-700/80 bg-white/70 dark:bg-slate-900/70 shadow-sm sticky top-24 space-y-3">
+                  
+                  <!-- En-tête de la liste à droite -->
+                  <div class="flex items-center justify-between pb-2 border-b border-slate-200 dark:border-slate-800">
+                    <div class="flex items-center gap-2">
+                      <div class="w-7 h-7 rounded-lg bg-amber-100 dark:bg-amber-950/80 text-amber-600 flex items-center justify-center font-bold">
+                        <i data-lucide="lock" class="w-4 h-4"></i>
+                      </div>
+                      <div>
+                        <h4 class="font-bold text-xs sm:text-sm text-slate-900 dark:text-white flex items-center gap-1.5">
+                          <span>Articles réservés</span>
+                          <span id="reserveItemsBadgeCount" class="px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-100 text-amber-700 dark:bg-amber-900/60 dark:text-amber-300">0</span>
+                        </h4>
+                        <p class="text-[11px] text-slate-500" id="reserveItemsSummaryText">0 barre(s) au total</p>
+                      </div>
+                    </div>
+
+                    <div class="flex items-center gap-1">
+                      <button type="button" onclick="clearReserveItemsList()" id="btnReserveClear" class="hidden text-[11px] text-amber-600 hover:underline px-2 py-1 font-semibold" title="Vider la liste">
+                        Vider tout
+                      </button>
+                      <!-- Bouton Pliable / Dépliable -->
+                      <button type="button" onclick="toggleReserveListCollapse()" class="p-1.5 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-500 transition-colors" title="Plier / Déplier la liste">
+                        <i id="reserveCollapseIcon" data-lucide="chevron-up" class="w-4 h-4 transition-transform duration-200"></i>
+                      </button>
+                    </div>
+                  </div>
+
+                  <!-- Corps pliable de la liste -->
+                  <div id="reserveCollapsibleBody" class="space-y-2 transition-all duration-200">
+                    
+                    <div id="reserveItemsList" class="space-y-2 max-h-[380px] overflow-y-auto pr-1">
+                      <!-- Message si vide -->
+                      <div id="reserveEmptyMsg" class="p-6 rounded-xl border border-dashed border-slate-200 dark:border-slate-700 text-center text-slate-400 text-xs flex flex-col items-center gap-2">
+                        <i data-lucide="package-plus" class="w-8 h-8 text-slate-300 dark:text-slate-600"></i>
+                        <span>Aucun profilé dans cette réservation.<br>Sélectionnez un profilé et sa quantité à gauche, puis cliquez sur <b>Ajouter</b>.</span>
+                      </div>
+                    </div>
+
+                  </div>
+
+                  <!-- Bouton de validation principale -->
+                  <div class="pt-2 border-t border-slate-200 dark:border-slate-800">
+                    <button type="submit" id="btnSubmitReserve" class="btn-touch w-full py-3.5 px-4 rounded-xl bg-amber-600 hover:bg-amber-700 text-white font-bold text-xs sm:text-sm shadow-md shadow-amber-600/30 flex items-center justify-center gap-2 transition-all">
+                      <i data-lucide="lock" class="w-4 h-4"></i>
+                      <span id="reserveSubmitBtnLabel">Confirmer la Réservation (0 article)</span>
+                    </button>
+                  </div>
+
+                </div>
+              </div>
+
+            </div>
+
+          </form>
+        </div>
+
+      </section>
+
+
+      <!-- ================= 4. SECTION MOUVEMENTS (HISTORIQUE & TRAÇABILITÉ) ================= -->
+      <section id="tab-movements" class="tab-content hidden space-y-5">
+        
+        <div class="glass-panel p-4 rounded-2xl border border-slate-200 dark:border-slate-800 space-y-4">
+          <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+            <div>
+              <h2 class="text-lg font-bold text-slate-900 dark:text-white flex items-center gap-2">
+                <i data-lucide="history" class="w-5 h-5 text-emerald-600"></i>
+                <span>Journal Chronologique des Mouvements</span>
+              </h2>
+              <p class="text-xs text-slate-500 dark:text-slate-400">Traçabilité complète des débits, entrées et réservations chantiers avec valorisation au PMP (DZD)</p>
+            </div>
+
+            <button onclick="exportMovementsCSV()" class="btn-touch px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-semibold text-xs sm:text-sm shadow-sm flex items-center gap-2 self-start sm:self-auto">
+              <i data-lucide="file-spreadsheet" class="w-4 h-4"></i>
+              <span>Exporter CSV Excel</span>
+            </button>
+          </div>
+
+          <!-- Filtres Mouvements -->
+          <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3 pt-2">
+            <div>
+              <label class="block text-[11px] font-semibold text-slate-500 mb-1">Opération</label>
+              <select id="mvtFilterType" onchange="filterMovements()" class="w-full px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-xs sm:text-sm focus:ring-2 focus:ring-emerald-500 outline-none">
+                <option value="ALL">Toutes les opérations</option>
+                <option value="STOCKAGE">📥 Stockage (Entrée)</option>
+                <option value="DESTOCKAGE">📤 Déstockage (Sortie)</option>
+                <option value="RESERVATION">🔒 Réservation</option>
+              </select>
+            </div>
+
+            <div>
+              <label class="block text-[11px] font-semibold text-slate-500 mb-1">Date début</label>
+              <input type="date" id="mvtFilterStartDate" onchange="filterMovements()" class="w-full px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-xs sm:text-sm focus:ring-2 focus:ring-emerald-500 outline-none">
+            </div>
+
+            <div>
+              <label class="block text-[11px] font-semibold text-slate-500 mb-1">Date fin</label>
+              <input type="date" id="mvtFilterEndDate" onchange="filterMovements()" class="w-full px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-xs sm:text-sm focus:ring-2 focus:ring-emerald-500 outline-none">
+            </div>
+
+            <div>
+              <label class="block text-[11px] font-semibold text-slate-500 mb-1">Chantier / Commande</label>
+              <select id="mvtFilterOrder" onchange="filterMovements()" class="w-full px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-xs sm:text-sm focus:ring-2 focus:ring-emerald-500 outline-none">
+                <option value="ALL">Tous chantiers</option>
+              </select>
+            </div>
+
+            <div>
+              <label class="block text-[11px] font-semibold text-slate-500 mb-1">Recherche</label>
+              <input type="text" id="mvtSearchInput" oninput="debounceMovementsFilter()" placeholder="Réf, poseur, chantier..." class="w-full px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-xs sm:text-sm focus:ring-2 focus:ring-emerald-500 outline-none">
+            </div>
+          </div>
+        </div>
+
+        <div class="glass-panel rounded-2xl border border-slate-200 dark:border-slate-800 overflow-hidden shadow-sm">
+          <!-- Barre de défilement horizontal synchronisée en haut -->
+          <div id="movementsTopScrollWrapper" class="top-scroll-sync border-b border-slate-200 dark:border-slate-800 bg-slate-100/70 dark:bg-slate-800/70">
+            <div id="movementsTopScrollContent" class="h-1"></div>
+          </div>
+          <div id="movementsTableScrollWrapper" class="table-scroll-sync overflow-x-auto">
+            <table id="movementsTable" class="w-full text-left text-xs">
+              <thead class="bg-slate-100/90 dark:bg-slate-800 text-slate-600 dark:text-slate-300 font-bold uppercase text-[11px] border-b border-slate-200 dark:border-slate-700">
+                <tr>
+                  <th class="py-2.5 px-2.5">Date / Heure</th>
+                  <th class="py-2.5 px-2 text-center">Action</th>
+                  <th class="py-2.5 px-2.5">Référence</th>
+                  <th class="py-2.5 px-2.5">Désignation</th>
+                  <th class="py-2.5 px-2.5">Teinte</th>
+                  <th class="py-2.5 px-2 text-right">Quantité</th>
+                  <th class="py-2.5 px-2.5 text-right">Prix Unit.</th>
+                  <th class="py-2.5 px-2.5 text-right">PMP</th>
+                  <th class="py-2.5 px-2.5 text-right">Total (DZD)</th>
+                  <th class="py-2.5 px-2.5">Chantier / Lot</th>
+                  <th class="py-2.5 px-2.5">Opérateur</th>
+                  <th class="py-2.5 px-2.5">Notes</th>
+                </tr>
+              </thead>
+              <tbody id="movementsTableBody" class="divide-y divide-slate-200 dark:divide-slate-800"></tbody>
+            </table>
+          </div>
+        </div>
+
+      </section>
+
+
+      <!-- ================= 5. SECTION PARAMÈTRES ================= -->
+      <section id="tab-settings" class="tab-content hidden space-y-6">
+        
+        <div class="glass-panel p-4 rounded-2xl border border-slate-200 dark:border-slate-800 flex items-center justify-between">
+          <div>
+            <h2 class="text-lg font-bold text-slate-900 dark:text-white flex items-center gap-2">
+              <i data-lucide="sliders" class="w-5 h-5 text-indigo-600"></i>
+              <span>Paramètres & Données Maîtresses</span>
+            </h2>
+            <p class="text-xs text-slate-500 dark:text-slate-400">Gérez vos Commandes, Séries, Catégories, Unités et Emplacements atelier</p>
+          </div>
+
+          <button onclick="confirmResetDemo()" class="btn-touch px-3 sm:px-4 py-2 rounded-xl bg-slate-200 dark:bg-slate-800 hover:bg-rose-100 dark:hover:bg-rose-950/50 text-slate-700 dark:text-slate-300 hover:text-rose-600 text-xs font-semibold transition-colors flex items-center gap-1.5">
+            <i data-lucide="rotate-ccw" class="w-4 h-4"></i>
+            <span class="hidden sm:inline">Réinitialiser Données Menuiserie</span>
+          </button>
+        </div>
+
+        <!-- Carte Spéciale : Cloud Supabase & Synchronisation Temps Réel Multi-Appareils -->
+        <div class="glass-panel p-5 rounded-2xl border-2 border-emerald-500/30 bg-gradient-to-r from-emerald-50/40 via-white to-indigo-50/30 dark:from-emerald-950/20 dark:via-slate-900 dark:to-indigo-950/20 shadow-sm space-y-4">
+          <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+            <div class="flex items-center gap-3">
+              <div class="w-10 h-10 rounded-xl bg-gradient-to-tr from-emerald-600 to-teal-400 text-white flex items-center justify-center shadow-md shadow-emerald-500/20">
+                <i data-lucide="cloud-lightning" class="w-5 h-5"></i>
+              </div>
+              <div>
+                <h3 class="text-sm font-bold text-slate-900 dark:text-white flex items-center gap-2">
+                  <span>Supabase Cloud — Sauvegardes Automatiques & Synchronisation Temps Réel</span>
+                  <span id="supabaseStatusPill" class="px-2 py-0.5 rounded-full text-[10px] font-bold bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-400">Non configuré</span>
+                </h3>
+                <p class="text-xs text-slate-500 dark:text-slate-400">Synchronisation instantanée WebSockets entre tablettes, mobiles et PC d'atelier sans rechargement.</p>
+              </div>
+            </div>
+
+            <div class="flex items-center gap-2">
+              <a href="/supabase_schema.sql" download class="btn-touch px-3 py-1.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-300 text-xs font-semibold flex items-center gap-1.5 shadow-sm" title="Télécharger le script SQL pour Supabase">
+                <i data-lucide="file-code" class="w-4 h-4 text-emerald-500"></i>
+                <span>Télécharger Schéma SQL</span>
+              </a>
+            </div>
+          </div>
+
+          <!-- Formulaire de configuration Supabase Cloud -->
+          <div class="grid grid-cols-1 sm:grid-cols-12 gap-3 pt-1">
+            <div class="sm:col-span-5">
+              <label class="block text-[11px] font-semibold text-slate-600 dark:text-slate-400 mb-1">Project URL Supabase</label>
+              <input type="url" id="cfgSupabaseUrl" placeholder="https://votre-projet.supabase.co" class="w-full px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-xs font-mono focus:ring-2 focus:ring-emerald-500 outline-none">
+            </div>
+
+            <div class="sm:col-span-5">
+              <label class="block text-[11px] font-semibold text-slate-600 dark:text-slate-400 mb-1">Clé Publique Anon (API Key)</label>
+              <input type="password" id="cfgSupabaseKey" placeholder="eyJhbGciOi..." class="w-full px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-xs font-mono focus:ring-2 focus:ring-emerald-500 outline-none">
+            </div>
+
+            <div class="sm:col-span-2 flex items-end">
+              <button type="button" onclick="saveAndConnectSupabase()" class="btn-touch w-full py-2 px-3 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs shadow-md shadow-emerald-600/20 flex items-center justify-center gap-1.5">
+                <i data-lucide="check" class="w-4 h-4"></i>
+                <span>Connecter</span>
+              </button>
+            </div>
+          </div>
+        </div>
+
+        <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+          
+          <!-- Carte 1 : Commandes & Chantiers (Création et suivi) -->
+          <div class="glass-panel p-4 rounded-2xl border border-slate-200 dark:border-slate-800 flex flex-col justify-between md:col-span-2 lg:col-span-1 shadow-sm">
+            <div>
+              <div class="flex items-center justify-between mb-3">
+                <h3 class="text-sm font-bold text-slate-900 dark:text-white flex items-center gap-2">
+                  <i data-lucide="hard-hat" class="w-4 h-4 text-blue-500"></i>
+                  <span>Commandes & Chantiers</span>
+                </h3>
+                <span id="settingsOrdersCountBadge" class="text-xs font-bold px-2 py-0.5 rounded-full bg-blue-100 text-blue-700 dark:bg-blue-900/60 dark:text-blue-300">0</span>
+              </div>
+              <p class="text-[11px] text-slate-500 mb-2">Créez vos commandes pour les assigner lors des déstockages ou réservations</p>
+              <ul id="settingsOrdersList" class="space-y-1.5 max-h-56 overflow-y-auto pr-1 text-xs"></ul>
+            </div>
+
+            <form onsubmit="handleAddOrderInSettings(event)" class="mt-4 pt-3 border-t border-slate-200 dark:border-slate-800 space-y-2">
+              <div class="grid grid-cols-2 gap-2">
+                <input type="text" id="newOrderNumberSettings" required placeholder="N° Commande (ex: DELMAR)" class="px-2.5 py-1.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-xs font-mono font-bold uppercase focus:ring-2 focus:ring-blue-500 outline-none">
+                <input type="text" id="newOrderClientSettings" required placeholder="Client / Chantier" class="px-2.5 py-1.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-xs focus:ring-2 focus:ring-blue-500 outline-none">
+              </div>
+              <input type="text" id="newOrderNotesSettings" placeholder="Notes (ex: RPT 55mm, Gris 7016)" class="w-full px-3 py-1.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-xs focus:ring-2 focus:ring-blue-500 outline-none">
+              <button type="submit" class="btn-touch w-full py-2 rounded-xl bg-blue-600 hover:bg-blue-700 text-white font-semibold text-xs shadow-sm flex items-center justify-center gap-1">
+                <i data-lucide="plus" class="w-3.5 h-3.5"></i>
+                <span>Créer Commande / Chantier</span>
+              </button>
+            </form>
+          </div>
+
+          <!-- Carte 2 : Cases Atelier (P-N° Profilés et A-N° Accessoires) -->
+          <div class="glass-panel p-4 rounded-2xl border border-slate-200 dark:border-slate-800 flex flex-col justify-between">
+            <div>
+              <div class="flex items-center justify-between mb-3">
+                <h3 class="text-sm font-bold text-slate-900 dark:text-white flex items-center gap-2">
+                  <i data-lucide="layout-grid" class="w-4 h-4 text-indigo-500"></i>
+                  <span>Cases Atelier (P- & A-)</span>
+                </h3>
+                <span id="casesCountBadge" class="text-xs font-bold px-2 py-0.5 rounded-full bg-indigo-100 text-indigo-700 dark:bg-indigo-900/60 dark:text-indigo-300">0</span>
+              </div>
+              <p class="text-[11px] text-slate-500 mb-2"><b>P-xx</b> : Profilés alu • <b>A-xx</b> : Accessoires</p>
+              <ul id="settingsCasesList" class="space-y-1.5 max-h-52 overflow-y-auto pr-1 text-xs"></ul>
+            </div>
+
+            <form onsubmit="handleAddCase(event)" class="mt-4 pt-3 border-t border-slate-200 dark:border-slate-800 space-y-2">
+              <div class="grid grid-cols-2 gap-2">
+                <select id="newCaseType" required class="px-2 py-1.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-xs font-semibold focus:ring-2 focus:ring-indigo-500 outline-none">
+                  <option value="PROFILE">Profilé (P-)</option>
+                  <option value="ACCESSOIRE">Accessoire (A-)</option>
+                </select>
+                <input type="text" id="newCaseNumber" required placeholder="N° (ex: 06)" class="px-2.5 py-1.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-xs font-mono font-bold uppercase focus:ring-2 focus:ring-indigo-500 outline-none">
+              </div>
+              <input type="text" id="newCaseDesc" placeholder="Description (ex: Casier profilés 6m)" class="w-full px-3 py-1.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-xs focus:ring-2 focus:ring-indigo-500 outline-none">
+              <button type="submit" class="btn-touch w-full py-2 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white font-semibold text-xs shadow-sm flex items-center justify-center gap-1">
+                <i data-lucide="plus" class="w-3.5 h-3.5"></i>
+                <span>Ajouter Case Atelier</span>
+              </button>
+            </form>
+          </div>
+
+          <!-- Carte 3 : Unités de Mesure -->
+          <div class="glass-panel p-4 rounded-2xl border border-slate-200 dark:border-slate-800 flex flex-col justify-between">
+            <div>
+              <div class="flex items-center justify-between mb-3">
+                <h3 class="text-sm font-bold text-slate-900 dark:text-white flex items-center gap-2">
+                  <i data-lucide="ruler" class="w-4 h-4 text-emerald-500"></i>
+                  <span>Unités de Mesure</span>
+                </h3>
+                <span id="unitsCountBadge" class="text-xs font-bold px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-700 dark:bg-emerald-900/60 dark:text-emerald-300">0</span>
+              </div>
+              <ul id="settingsUnitsList" class="space-y-1.5 max-h-52 overflow-y-auto pr-1 text-xs"></ul>
+            </div>
+
+            <form onsubmit="handleAddUnit(event)" class="mt-4 pt-3 border-t border-slate-200 dark:border-slate-800 space-y-2">
+              <div class="grid grid-cols-2 gap-2">
+                <input type="text" id="newUnitName" required placeholder="Nom (ex: Paquet)" class="px-2.5 py-1.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-xs focus:ring-2 focus:ring-emerald-500 outline-none">
+                <input type="text" id="newUnitSymbol" required placeholder="Symbole (ex: pqt)" class="px-2.5 py-1.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-xs font-mono focus:ring-2 focus:ring-emerald-500 outline-none">
+              </div>
+              <button type="submit" class="btn-touch w-full py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-semibold text-xs shadow-sm flex items-center justify-center gap-1">
+                <i data-lucide="plus" class="w-3.5 h-3.5"></i>
+                <span>Ajouter Unité</span>
+              </button>
+            </form>
+          </div>
+
+          <!-- Carte 4 : Catégories -->
+          <div class="glass-panel p-4 rounded-2xl border border-slate-200 dark:border-slate-800 flex flex-col justify-between">
+            <div>
+              <div class="flex items-center justify-between mb-3">
+                <h3 class="text-sm font-bold text-slate-900 dark:text-white flex items-center gap-2">
+                  <i data-lucide="folder" class="w-4 h-4 text-indigo-500"></i>
+                  <span>Catégories</span>
+                </h3>
+                <span id="catCountBadge" class="text-xs font-bold px-2 py-0.5 rounded-full bg-indigo-100 text-indigo-700 dark:bg-indigo-900/60 dark:text-indigo-300">0</span>
+              </div>
+              <ul id="settingsCategoriesList" class="space-y-2 max-h-56 overflow-y-auto pr-1 text-xs"></ul>
+            </div>
+
+            <form onsubmit="handleAddCategory(event)" class="mt-4 pt-3 border-t border-slate-200 dark:border-slate-800 space-y-2">
+              <input type="text" id="newCatName" required placeholder="Nouvelle catégorie..." class="w-full px-3 py-1.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-xs focus:ring-2 focus:ring-indigo-500 outline-none">
+              <button type="submit" class="btn-touch w-full py-2 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white font-semibold text-xs shadow-sm flex items-center justify-center gap-1">
+                <i data-lucide="plus" class="w-3.5 h-3.5"></i>
+                <span>Ajouter Catégorie</span>
+              </button>
+            </form>
+          </div>
+
+          <!-- Carte 5 : Gammes & Séries -->
+          <div class="glass-panel p-4 rounded-2xl border border-slate-200 dark:border-slate-800 flex flex-col justify-between">
+            <div>
+              <div class="flex items-center justify-between mb-3">
+                <h3 class="text-sm font-bold text-slate-900 dark:text-white flex items-center gap-2">
+                  <i data-lucide="tag" class="w-4 h-4 text-amber-500"></i>
+                  <span>Séries & Gammes</span>
+                </h3>
+                <span id="gammeCountBadge" class="text-xs font-bold px-2 py-0.5 rounded-full bg-amber-100 text-amber-700 dark:bg-amber-900/60 dark:text-amber-300">0</span>
+              </div>
+              <ul id="settingsGammesList" class="space-y-2 max-h-56 overflow-y-auto pr-1 text-xs"></ul>
+            </div>
+
+            <form onsubmit="handleAddGamme(event)" class="mt-4 pt-3 border-t border-slate-200 dark:border-slate-800 space-y-2">
+              <input type="text" id="newGammeName" required placeholder="Nouvelle série..." class="w-full px-3 py-1.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-xs focus:ring-2 focus:ring-amber-500 outline-none">
+              <button type="submit" class="btn-touch w-full py-2 rounded-xl bg-amber-600 hover:bg-amber-700 text-white font-semibold text-xs shadow-sm flex items-center justify-center gap-1">
+                <i data-lucide="plus" class="w-3.5 h-3.5"></i>
+                <span>Ajouter Série</span>
+              </button>
+            </form>
+          </div>
+
+          <!-- Carte 6 : Nuancier & Couleurs RAL (Gestion dynamique) -->
+          <div class="glass-panel p-4 rounded-2xl border border-slate-200 dark:border-slate-800 flex flex-col justify-between shadow-sm">
+            <div>
+              <div class="flex items-center justify-between mb-3">
+                <h3 class="text-sm font-bold text-slate-900 dark:text-white flex items-center gap-2">
+                  <i data-lucide="palette" class="w-4 h-4 text-pink-500"></i>
+                  <span>Nuancier & Couleurs RAL</span>
+                </h3>
+                <span id="colorsCountBadge" class="text-xs font-bold px-2 py-0.5 rounded-full bg-pink-100 text-pink-700 dark:bg-pink-900/60 dark:text-pink-300">0</span>
+              </div>
+              <p class="text-[11px] text-slate-500 mb-2">Seules les couleurs enregistrées ici sont proposées lors de la création d'articles</p>
+              <ul id="settingsColorsList" class="space-y-2 max-h-56 overflow-y-auto pr-1 text-xs"></ul>
+            </div>
+
+            <form onsubmit="handleAddColor(event)" class="mt-4 pt-3 border-t border-slate-200 dark:border-slate-800 space-y-2">
+              <div class="grid grid-cols-1 sm:grid-cols-3 gap-2">
+                <div class="sm:col-span-2">
+                  <input type="text" id="newColorName" required placeholder="Nom (ex: RAL 7024 ou Noir 2100)" class="w-full px-2.5 py-1.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-xs font-semibold focus:ring-2 focus:ring-pink-500 outline-none">
+                </div>
+                <div class="flex items-center gap-1.5">
+                  <input type="color" id="newColorHex" value="#474a51" class="w-8 h-8 rounded-lg cursor-pointer border border-slate-200 dark:border-slate-700 bg-transparent p-0.5" title="Choisir la couleur visuelle">
+                  <input type="text" id="newColorRal" placeholder="RAL (ex: 7024)" class="w-full px-2 py-1.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-xs font-mono font-bold focus:ring-2 focus:ring-pink-500 outline-none">
+                </div>
+              </div>
+              <button type="submit" class="btn-touch w-full py-2 rounded-xl bg-pink-600 hover:bg-pink-700 text-white font-semibold text-xs shadow-sm flex items-center justify-center gap-1">
+                <i data-lucide="plus" class="w-3.5 h-3.5"></i>
+                <span>Ajouter Couleur</span>
+              </button>
+            </form>
+          </div>
+
+        </div>
+
+      </section>
+
+      <!-- ================= 6. SECTION INVENTAIRE PHYSIQUE CROISÉ (DOUBLE COMPTAGE 2 PERSONNES & ANOMALIES) ================= -->
+      <section id="tab-inventory" class="tab-content hidden space-y-5">
+        
+        <!-- EN-TÊTE DE LA SECTION INVENTAIRE & SOUS-ONGLETS -->
+        <div class="glass-panel p-5 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm space-y-4">
+          <div class="flex flex-col md:flex-row md:items-center justify-between gap-4">
+            <div class="flex items-center gap-3">
+              <div class="p-3 rounded-2xl bg-indigo-600 text-white shadow-md shadow-indigo-500/20">
+                <i data-lucide="clipboard-check" class="w-6 h-6"></i>
+              </div>
+              <div>
+                <div class="flex items-center gap-2">
+                  <h2 class="text-lg sm:text-xl font-extrabold tracking-tight text-slate-900 dark:text-white">Inventaire Physique Croisé</h2>
+                  <span class="px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-indigo-100 text-indigo-700 dark:bg-indigo-900/60 dark:text-indigo-300">Double Comptage</span>
+                </div>
+                <p class="text-xs text-slate-500 dark:text-slate-400">Deux personnes comptent séparément • Détection automatique des écarts (Rouge) • Traçabilité et mise à niveau</p>
+              </div>
+            </div>
+
+            <!-- Bascule Sous-onglets -->
+            <div class="flex items-center p-1 rounded-xl bg-slate-100 dark:bg-slate-800/80 border border-slate-200 dark:border-slate-700 self-start md:self-auto">
+              <button 
+                type="button" 
+                id="btnSubTabCounting" 
+                onclick="switchInventorySubTab('counting')" 
+                class="px-4 py-2 rounded-lg text-xs font-bold bg-indigo-600 text-white shadow-sm transition-all flex items-center gap-1.5"
+              >
+                <i data-lucide="list-checks" class="w-4 h-4"></i>
+                <span>Grille de Comptage</span>
+              </button>
+              <button 
+                type="button" 
+                id="btnSubTabAnomalies" 
+                onclick="switchInventorySubTab('anomalies')" 
+                class="px-4 py-2 rounded-lg text-xs font-semibold text-slate-600 dark:text-slate-400 hover:bg-slate-200/60 dark:hover:bg-slate-700/60 transition-all flex items-center gap-1.5"
+              >
+                <i data-lucide="alert-triangle" class="w-4 h-4 text-rose-500"></i>
+                <span>Sous-onglet Anomalies</span>
+                <span id="badgeSubTabAnomalies" class="ml-1 px-1.5 py-0.2 rounded-full text-[10px] font-bold bg-rose-100 text-rose-700 dark:bg-rose-950 dark:text-rose-300">0</span>
+              </button>
+            </div>
+          </div>
+        </div>
+
+        <!-- ================= SOUS-ONGLET 1 : GRILLE DE COMPTAGE & CONTRÔLE ================= -->
+        <div id="inventorySubTabCounting" class="space-y-5">
+          
+          <!-- CARTES STATISTIQUES RAPIDES -->
+          <div class="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
+            <div class="glass-panel p-4 rounded-xl border border-slate-200 dark:border-slate-800">
+              <span class="text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider">Total Articles</span>
+              <div class="text-xl sm:text-2xl font-extrabold text-slate-900 dark:text-white mt-1 font-mono" id="invStatTotal">0</div>
+              <p class="text-[11px] text-slate-400 mt-0.5">Toutes références & déclinaisons</p>
+            </div>
+            <div class="glass-panel p-4 rounded-xl border border-rose-200 dark:border-rose-900/60 bg-rose-50/20 dark:bg-rose-950/20">
+              <span class="text-xs font-bold text-rose-600 dark:text-rose-400 uppercase tracking-wider flex items-center gap-1">
+                <i data-lucide="alert-octagon" class="w-3.5 h-3.5"></i>
+                <span>En Anomalie (Rouge)</span>
+              </span>
+              <div class="text-xl sm:text-2xl font-extrabold text-rose-600 dark:text-rose-400 mt-1 font-mono" id="invStatAnomalies">0</div>
+              <p class="text-[11px] text-rose-600/70 mt-0.5">Désaccord P1≠P2 ou écart stock réel</p>
+            </div>
+            <div class="glass-panel p-4 rounded-xl border border-emerald-200 dark:border-emerald-900/60 bg-emerald-50/20 dark:bg-emerald-950/20">
+              <span class="text-xs font-bold text-emerald-600 dark:text-emerald-400 uppercase tracking-wider flex items-center gap-1">
+                <i data-lucide="check-circle-2" class="w-3.5 h-3.5"></i>
+                <span>Conformes</span>
+              </span>
+              <div class="text-xl sm:text-2xl font-extrabold text-emerald-600 dark:text-emerald-400 mt-1 font-mono" id="invStatConforme">0</div>
+              <p class="text-[11px] text-emerald-600/70 mt-0.5">P1 = P2 = Quantité réelle</p>
+            </div>
+            <div class="glass-panel p-4 rounded-xl border border-slate-200 dark:border-slate-800">
+              <span class="text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider">Non Inventoriés</span>
+              <div class="text-xl sm:text-2xl font-extrabold text-slate-600 dark:text-slate-400 mt-1 font-mono" id="invStatNotInventoried">0</div>
+              <p class="text-[11px] text-slate-400 mt-0.5">Pas encore passés par inventaire</p>
+            </div>
+          </div>
+
+          <!-- BARRE D'ACTIONS, RECHERCHE & SÉLECTION -->
+          <div class="glass-panel p-4 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm space-y-3">
+            
+            <!-- Ligne 1 : Nom des 2 personnes chargées du comptage -->
+            <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-slate-100/70 dark:bg-slate-800/60 p-3 rounded-xl border border-slate-200/80 dark:border-slate-700/80">
+              <div class="flex items-center gap-2">
+                <i data-lucide="users" class="w-4 h-4 text-indigo-600"></i>
+                <span class="text-xs font-bold text-slate-800 dark:text-slate-200">Opérateurs d'inventaire :</span>
+              </div>
+              <div class="flex items-center gap-3 flex-wrap">
+                <div class="flex items-center gap-1.5">
+                  <label class="text-xs font-semibold text-slate-500">Personne 1 :</label>
+                  <input type="text" id="inventoryGlobalPerson1" value="Opérateur 1" placeholder="Nom pers. 1" class="px-2.5 py-1 text-xs font-semibold rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-900 w-32 focus:ring-1 focus:ring-indigo-500">
+                </div>
+                <div class="flex items-center gap-1.5">
+                  <label class="text-xs font-semibold text-slate-500">Personne 2 :</label>
+                  <input type="text" id="inventoryGlobalPerson2" value="Opérateur 2" placeholder="Nom pers. 2" class="px-2.5 py-1 text-xs font-semibold rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-900 w-32 focus:ring-1 focus:ring-indigo-500">
+                </div>
+              </div>
+            </div>
+
+            <!-- Ligne 2 : Recherche réactive & Filtres -->
+            <div class="flex flex-col lg:flex-row lg:items-center justify-between gap-3">
+              
+              <!-- Barre de recherche indispensable demandée par l'utilisateur -->
+              <div class="relative flex-1 min-w-[240px]">
+                <i data-lucide="search" class="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-slate-400"></i>
+                <input 
+                  type="text" 
+                  id="inventorySearchInput" 
+                  placeholder="Recherche par référence, profilé, couleur, casier (ex: HPS-40, Blanc, P-01)..." 
+                  oninput="debounceInventorySearch()"
+                  class="w-full pl-9 pr-3 py-2 rounded-xl text-xs sm:text-sm border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 focus:ring-2 focus:ring-indigo-500 outline-none shadow-sm"
+                >
+              </div>
+
+              <!-- Filtres d'état -->
+              <div class="flex items-center gap-2 flex-wrap">
+                <select id="inventoryFilterStatus" onchange="onInventoryStatusFilterChange()" class="px-3 py-2 rounded-xl text-xs font-semibold border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 focus:ring-1 focus:ring-indigo-500 outline-none">
+                  <option value="ALL">🔍 Tous les états</option>
+                  <option value="DISCREPANCY">⚠️ En anomalie uniquement (Rouge)</option>
+                  <option value="NOT_INVENTORIED">⏳ Pas passé par inventaire</option>
+                  <option value="CONFORME">✅ Conformes uniquement</option>
+                  <option value="ADJUSTED">⚖️ Mises à niveau validées</option>
+                </select>
+
+                <button 
+                  type="button" 
+                  id="btnFilterOnlySelected" 
+                  onclick="toggleOnlySelectedFilter()" 
+                  class="px-3 py-2 rounded-xl text-xs font-semibold border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800 transition-all flex items-center gap-1.5"
+                  title="Afficher uniquement les articles cochés"
+                >
+                  <i data-lucide="check-square" class="w-4 h-4"></i>
+                  <span>Sélectionnés</span>
+                </button>
+              </div>
+            </div>
+
+            <!-- Ligne 3 : Boutons d'action groupée pour lancer l'inventaire -->
+            <div class="pt-2 border-t border-slate-100 dark:border-slate-800 flex flex-wrap items-center justify-between gap-2">
+              <div class="flex items-center gap-2 flex-wrap text-xs">
+                <button 
+                  onclick="selectAllFilteredInventory(true)" 
+                  class="px-3 py-1.5 rounded-lg border border-slate-200 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-800 font-medium"
+                >
+                  Tout cocher
+                </button>
+                <button 
+                  onclick="selectAllFilteredInventory(false)" 
+                  class="px-3 py-1.5 rounded-lg border border-slate-200 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-800 font-medium"
+                >
+                  Tout décocher
+                </button>
+                <button 
+                  onclick="launchInventoryForSelection()" 
+                  class="btn-touch px-3.5 py-1.5 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white font-bold shadow-sm shadow-indigo-600/20 flex items-center gap-1.5"
+                >
+                  <i data-lucide="play" class="w-3.5 h-3.5"></i>
+                  <span>Lancer l'inventaire pour la sélection</span>
+                </button>
+                <button 
+                  onclick="printInventorySheet(false)" 
+                  class="btn-touch px-3.5 py-1.5 rounded-xl bg-slate-800 hover:bg-slate-900 text-white font-bold shadow-sm flex items-center gap-1.5"
+                  title="Ouvrir la fiche de comptage physique officielle A4 pour impression ou prévisualisation"
+                >
+                  <i data-lucide="printer" class="w-3.5 h-3.5 text-amber-400"></i>
+                  <span>Fiche A4 (Imprimer)</span>
+                </button>
+                <button 
+                  onclick="exportInventoryPdf(false)" 
+                  class="btn-touch px-3 py-1.5 rounded-xl bg-indigo-700 hover:bg-indigo-800 text-white font-bold shadow-sm flex items-center gap-1.5"
+                  title="Télécharger directement le document au format PDF vectoriel officiel A4"
+                >
+                  <i data-lucide="file-down" class="w-3.5 h-3.5 text-emerald-300"></i>
+                  <span>Export PDF</span>
+                </button>
+              </div>
+
+              <button 
+                onclick="saveAllInventoryCounts()" 
+                class="btn-touch px-4 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs shadow-sm shadow-emerald-600/20 flex items-center gap-1.5 ml-auto"
+              >
+                <i data-lucide="save" class="w-4 h-4"></i>
+                <span>Enregistrer tous les comptages</span>
+              </button>
+            </div>
+
+          </div>
+
+          <!-- GRILLE PRINCIPALE D'INVENTAIRE -->
+          <div class="glass-panel rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm overflow-hidden">
+            <div class="overflow-x-auto">
+              <table class="w-full text-left text-xs sm:text-sm">
+                <thead class="bg-slate-100 dark:bg-slate-800/80 text-slate-600 dark:text-slate-400 uppercase text-[11px] font-bold tracking-wider">
+                  <tr>
+                    <th class="p-3 w-10 text-center">
+                      <input type="checkbox" onchange="selectAllFilteredInventory(this.checked)" class="w-4 h-4 rounded text-indigo-600 focus:ring-indigo-500 cursor-pointer">
+                    </th>
+                    <th class="p-3 min-w-[200px]">Profilé / Réf</th>
+                    <th class="p-3 min-w-[140px]">Couleur & Casier</th>
+                    <th class="p-3 text-right min-w-[110px]">Stock Réel</th>
+                    <th class="p-3 text-center min-w-[150px]">Dernier Inventaire</th>
+                    <th class="p-3 min-w-[130px]">Comptage Pers. 1</th>
+                    <th class="p-3 min-w-[130px]">Comptage Pers. 2</th>
+                    <th class="p-3 text-center min-w-[160px]">Statut & Alerte</th>
+                    <th class="p-3 text-right min-w-[150px]">Actions</th>
+                  </tr>
+                </thead>
+                <tbody id="inventoryTableBody" class="divide-y divide-slate-200 dark:divide-slate-800">
+                  <!-- Rempli dynamiquement par inventory.js -->
+                </tbody>
+              </table>
+            </div>
+          </div>
+
+        </div>
+
+        <!-- ================= SOUS-ONGLET 2 : ANOMALIES RÉGULARISÉES ================= -->
+        <div id="inventorySubTabAnomalies" class="hidden space-y-5">
+          
+          <div class="glass-panel p-5 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm space-y-3">
+            <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+              <div>
+                <h3 class="font-bold text-sm text-slate-900 dark:text-white flex items-center gap-2">
+                  <i data-lucide="archive" class="w-4 h-4 text-indigo-600"></i>
+                  <span>Historique des Anomalies d'Inventaire après Mise à Niveau</span>
+                </h3>
+                <p class="text-xs text-slate-500">Traçabilité complète des écarts physiques, motifs de perte/casse et impacts financiers</p>
+              </div>
+
+              <!-- Recherche dans les anomalies -->
+              <div class="relative min-w-[240px]">
+                <i data-lucide="search" class="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-slate-400"></i>
+                <input 
+                  type="text" 
+                  id="anomaliesSearchInput" 
+                  placeholder="Recherche motif, référence, couleur..." 
+                  oninput="debounceAnomaliesSearch()"
+                  class="w-full pl-9 pr-3 py-1.5 rounded-xl text-xs border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 focus:ring-1 focus:ring-indigo-500 outline-none"
+                >
+              </div>
+            </div>
+          </div>
+
+          <!-- Tableau des Anomalies -->
+          <div class="glass-panel rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm overflow-hidden">
+            <div class="overflow-x-auto">
+              <table class="w-full text-left text-xs sm:text-sm">
+                <thead class="bg-slate-100 dark:bg-slate-800/80 text-slate-600 dark:text-slate-400 uppercase text-[11px] font-bold tracking-wider">
+                  <tr>
+                    <th class="p-3">Date Régularisation</th>
+                    <th class="p-3">Réf & Article</th>
+                    <th class="p-3">Couleur</th>
+                    <th class="p-3 text-right">Avant vs Retenu</th>
+                    <th class="p-3 text-center">Écart (Qté Anomalie)</th>
+                    <th class="p-3 text-right">Impact Financier</th>
+                    <th class="p-3">Motif de l'Anomalie</th>
+                    <th class="p-3">Opérateurs</th>
+                  </tr>
+                </thead>
+                <tbody id="anomaliesTableBody" class="divide-y divide-slate-200 dark:divide-slate-800">
+                  <!-- Rempli dynamiquement par inventory.js -->
+                </tbody>
+              </table>
+            </div>
+          </div>
+
+        </div>
+
+      </section>
+
+    </main>
+
+  </div>
+
+
+  <!-- ================= BOTTOM NAVIGATION BAR (Mobile-First < lg) ================= -->
+  <nav class="lg:hidden mobile-bottom-nav">
+    <div class="grid grid-cols-6 h-16">
+      
+      <button onclick="switchTab('dashboard')" id="mobileNav-dashboard" class="nav-touch-item flex flex-col items-center justify-center py-1 text-slate-500 dark:text-slate-400">
+        <div class="nav-indicator"></div>
+        <i data-lucide="layout-dashboard" class="w-5 h-5"></i>
+        <span class="text-[10px] mt-0.5 font-medium">Accueil</span>
+      </button>
+
+      <button onclick="switchTab('stock')" id="mobileNav-stock" class="nav-touch-item flex flex-col items-center justify-center py-1 text-slate-500 dark:text-slate-400">
+        <div class="nav-indicator"></div>
+        <i data-lucide="package" class="w-5 h-5"></i>
+        <span class="text-[10px] mt-0.5 font-medium">Stock</span>
+      </button>
+
+      <button onclick="switchTab('actions')" id="mobileNav-actions" class="nav-touch-item flex flex-col items-center justify-center py-1 text-slate-500 dark:text-slate-400">
+        <div class="nav-indicator"></div>
+        <div class="p-1 rounded-lg bg-indigo-50 dark:bg-indigo-950 text-indigo-600 dark:text-indigo-400">
+          <i data-lucide="zap" class="w-5 h-5"></i>
+        </div>
+        <span class="text-[10px] mt-0.5 font-medium">Actions</span>
+      </button>
+
+      <button onclick="switchTab('movements')" id="mobileNav-movements" class="nav-touch-item flex flex-col items-center justify-center py-1 text-slate-500 dark:text-slate-400">
+        <div class="nav-indicator"></div>
+        <i data-lucide="history" class="w-5 h-5"></i>
+        <span class="text-[10px] mt-0.5 font-medium">Mouvements</span>
+      </button>
+
+      <button onclick="switchTab('inventory')" id="mobileNav-inventory" class="nav-touch-item flex flex-col items-center justify-center py-1 text-slate-500 dark:text-slate-400">
+        <div class="nav-indicator"></div>
+        <i data-lucide="clipboard-check" class="w-5 h-5 text-rose-500"></i>
+        <span class="text-[10px] mt-0.5 font-medium">Inventaire</span>
+      </button>
+
+      <button onclick="switchTab('settings')" id="mobileNav-settings" class="nav-touch-item flex flex-col items-center justify-center py-1 text-slate-500 dark:text-slate-400">
+        <div class="nav-indicator"></div>
+        <i data-lucide="sliders" class="w-5 h-5"></i>
+        <span class="text-[10px] mt-0.5 font-medium">Paramètres</span>
+      </button>
+
+    </div>
+  </nav>
+
+
+  <!-- ================= MODAL CRÉATION ARTICLE AU CATALOGUE MAÎTRE (ANTI-DOUBLON) ================= -->
+  <div id="modalNewCatalog" class="fixed inset-0 z-50 hidden bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4">
+    <div class="w-full max-w-lg bg-white dark:bg-slate-900 rounded-2xl p-6 border border-slate-200 dark:border-slate-800 shadow-2xl space-y-4 max-h-[90vh] overflow-y-auto">
+      <div class="flex items-center justify-between border-b border-slate-100 dark:border-slate-800 pb-3">
+        <h3 class="font-bold text-slate-900 dark:text-white flex items-center gap-2">
+          <i data-lucide="plus-circle" class="w-5 h-5 text-indigo-600"></i>
+          <span>Créer un Nouvel Article au Catalogue Maître</span>
+        </h3>
+        <button onclick="closeNewCatalogModal()" class="p-1 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-400 hover:text-slate-600">
+          <i data-lucide="x" class="w-5 h-5"></i>
+        </button>
+      </div>
+
+      <p class="text-xs text-slate-500">Règle de validation stricte : Toute tentative de créer une référence existant déjà sous la même couleur sera rejetée.</p>
+
+      <form onsubmit="handleCreateCatalogSubmit(event)" class="space-y-4">
+        <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+          <div>
+            <label class="block text-xs font-semibold mb-1 text-slate-700 dark:text-slate-300">Code Référence *</label>
+            <input type="text" id="catNewRef" required placeholder="ex: HPS-40 ou EX-2001" class="w-full px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-xs font-mono font-bold uppercase focus:ring-2 focus:ring-indigo-500 outline-none">
+          </div>
+          <div>
+            <label class="block text-xs font-semibold mb-1 text-slate-700 dark:text-slate-300">Désignation complète *</label>
+            <input type="text" id="catNewDesignation" required placeholder="ex: Profilé Dormant Alu 40mm RPT" class="w-full px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-xs focus:ring-2 focus:ring-indigo-500 outline-none">
+          </div>
+        </div>
+
+        <div class="grid grid-cols-1 sm:grid-cols-3 gap-3">
+          <div>
+            <label class="block text-xs font-semibold mb-1 text-slate-700 dark:text-slate-300">Catégorie *</label>
+            <select id="catNewCategory" required class="w-full px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-xs focus:ring-2 focus:ring-indigo-500 outline-none"></select>
+          </div>
+          <div>
+            <label class="block text-xs font-semibold mb-1 text-slate-700 dark:text-slate-300">Série / Gamme *</label>
+            <select id="catNewGamme" required class="w-full px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-xs focus:ring-2 focus:ring-indigo-500 outline-none"></select>
+          </div>
+          <div>
+            <label class="block text-xs font-semibold mb-1 text-slate-700 dark:text-slate-300">Unité *</label>
+            <select id="catNewUnit" required class="w-full px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-xs focus:ring-2 focus:ring-indigo-500 outline-none"></select>
+          </div>
+        </div>
+
+        <div class="grid grid-cols-1 sm:grid-cols-2 gap-3 p-3 rounded-xl bg-slate-50 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-700">
+          <div>
+            <label class="block text-xs font-semibold mb-1 text-slate-700 dark:text-slate-300">Teinte / Laquage *</label>
+            <input type="text" id="catNewColor" required placeholder="ex: Blanc 9010, Gris 7016..." class="w-full px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-xs focus:ring-2 focus:ring-indigo-500 outline-none">
+          </div>
+          <div>
+            <label class="block text-xs font-semibold mb-1 text-slate-700 dark:text-slate-300">Pastille chromatique</label>
+            <input type="color" id="catNewColorHex" value="#f8fafc" class="w-full h-8 rounded-lg cursor-pointer bg-transparent border-0 p-0">
+          </div>
+        </div>
+
+        <div class="grid grid-cols-1 sm:grid-cols-3 gap-3">
+          <div>
+            <label class="block text-xs font-semibold mb-1 text-slate-700 dark:text-slate-300">Stock initial</label>
+            <input type="number" id="catNewInitialQty" min="0" step="any" value="0" class="w-full px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-xs focus:ring-2 focus:ring-indigo-500 outline-none">
+          </div>
+          <div>
+            <label class="block text-xs font-semibold mb-1 text-slate-700 dark:text-slate-300">Prix d'achat initial (DZD)</label>
+            <input type="number" id="catNewPrice" min="0" step="any" value="0" class="w-full px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-xs focus:ring-2 focus:ring-indigo-500 outline-none">
+          </div>
+          <div>
+            <label class="block text-xs font-semibold mb-1 text-slate-700 dark:text-slate-300">Seuil d'alerte</label>
+            <input type="number" id="catNewThreshold" min="0" step="any" value="15" class="w-full px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-xs focus:ring-2 focus:ring-indigo-500 outline-none">
+          </div>
+        </div>
+
+        <div>
+          <label class="block text-xs font-semibold mb-1 text-slate-700 dark:text-slate-300">Casier / Emplacement atelier</label>
+          <input type="text" id="catNewLocation" placeholder="ex: Casier P-01 (vide = EN_ATTENTE_AFFECTATION)" class="w-full px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-xs focus:ring-2 focus:ring-indigo-500 outline-none">
+        </div>
+
+        <div class="flex items-center gap-3 pt-2">
+          <button type="button" onclick="closeNewCatalogModal()" class="btn-touch flex-1 py-2.5 rounded-xl border border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300 font-semibold text-xs">Annuler</button>
+          <button type="submit" class="btn-touch flex-1 py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs shadow-md shadow-indigo-600/30">Enregistrer au Catalogue</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+
+  <!-- ================= MODAL NOUVELLE COMMANDE / CHANTIER ================= -->
+  <div id="modalNewOrder" class="fixed inset-0 z-50 hidden bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4">
+    <div class="w-full max-w-md bg-white dark:bg-slate-900 rounded-2xl p-6 border border-slate-200 dark:border-slate-800 shadow-2xl space-y-4">
+      <div class="flex items-center justify-between border-b border-slate-100 dark:border-slate-800 pb-3">
+        <h3 class="font-bold text-slate-900 dark:text-white flex items-center gap-2">
+          <i data-lucide="hard-hat" class="w-5 h-5 text-blue-600"></i>
+          <span>Nouveau Chantier / Commande</span>
+        </h3>
+        <button onclick="closeNewOrderModal()" class="p-1 rounded-lg text-slate-400 hover:text-slate-600">
+          <i data-lucide="x" class="w-5 h-5"></i>
+        </button>
+      </div>
+
+      <form onsubmit="handleCreateOrderSubmit(event)" class="space-y-4">
+        <div>
+          <label class="block text-xs font-semibold mb-1 text-slate-700 dark:text-slate-300">Code Chantier / N° Commande *</label>
+          <input type="text" id="newOrderNumber" required placeholder="ex: DELMAR ou SIBAWI" class="w-full px-3 py-2.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-sm font-mono font-bold uppercase focus:ring-2 focus:ring-blue-500 outline-none">
+        </div>
+
+        <div>
+          <label class="block text-xs font-semibold mb-1 text-slate-700 dark:text-slate-300">Nom du Client / Chantier *</label>
+          <input type="text" id="newOrderClient" required placeholder="ex: Résidence DELMAR - Promotion Immobilière" class="w-full px-3 py-2.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-sm focus:ring-2 focus:ring-blue-500 outline-none">
+        </div>
+
+        <div>
+          <label class="block text-xs font-semibold mb-1 text-slate-700 dark:text-slate-300">Notes ou instructions débit / pose</label>
+          <textarea id="newOrderNotes" rows="3" placeholder="Profilés RPT 55mm, couleur Gris 7016 sablé..." class="w-full px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-xs sm:text-sm focus:ring-2 focus:ring-blue-500 outline-none"></textarea>
+        </div>
+
+        <div class="flex items-center gap-3 pt-2">
+          <button type="button" onclick="closeNewOrderModal()" class="btn-touch flex-1 py-2.5 rounded-xl border border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300 font-semibold text-xs">Annuler</button>
+          <button type="submit" class="btn-touch flex-1 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs shadow-md shadow-blue-600/30">Créer le Chantier</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+
+  <!-- ================= MODAL HISTORIQUE DU PMP & DÉTAILS D'UNE VARIANTE ================= -->
+  <div id="modalVariantDetails" class="fixed inset-0 z-50 hidden bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4">
+    <div class="w-full max-w-lg bg-white dark:bg-slate-900 rounded-2xl p-6 border border-slate-200 dark:border-slate-800 shadow-2xl space-y-4">
+      <div class="flex items-center justify-between border-b border-slate-100 dark:border-slate-800 pb-3">
+        <div class="flex items-center gap-3">
+          <div id="modalVariantColorDot" class="w-6 h-6 rounded-full border border-white shadow-sm"></div>
+          <div>
+            <h3 id="modalVariantTitle" class="font-bold text-slate-900 dark:text-white text-sm sm:text-base">Détails Profilé</h3>
+            <p id="modalVariantSubtitle" class="text-xs text-slate-500"></p>
+          </div>
+        </div>
+        <button onclick="closeVariantDetailsModal()" class="p-1 rounded-lg text-slate-400 hover:text-slate-600">
+          <i data-lucide="x" class="w-5 h-5"></i>
+        </button>
+      </div>
+
+      <div class="grid grid-cols-3 gap-3 text-center p-3 rounded-xl bg-slate-50 dark:bg-slate-800/60">
+        <div>
+          <span class="text-[10px] text-slate-400 uppercase font-semibold">Dernier Prix</span>
+          <div id="modalPrevPrice" class="text-sm font-bold text-slate-700 dark:text-slate-200">0 DZD</div>
+        </div>
+        <div class="border-x border-slate-200 dark:border-slate-700">
+          <span class="text-[10px] text-slate-400 uppercase font-semibold">PMP Actuel</span>
+          <div id="modalPmpPrice" class="text-sm font-bold text-emerald-600 dark:text-emerald-400">0 DZD</div>
+        </div>
+        <div>
+          <span class="text-[10px] text-slate-400 uppercase font-semibold">Casier</span>
+          <div id="modalLocationVal" class="text-xs font-bold text-indigo-600 dark:text-indigo-400 truncate">Casier</div>
+        </div>
+      </div>
+
+      <div>
+        <h4 class="text-xs font-bold text-slate-700 dark:text-slate-300 mb-2 flex items-center gap-1.5">
+          <i data-lucide="trending-up" class="w-3.5 h-3.5 text-indigo-500"></i>
+          <span>Historique des Approvisionnements & Évolution du PMP</span>
+        </h4>
+        <div class="max-h-40 overflow-y-auto rounded-xl border border-slate-200 dark:border-slate-800">
+          <table class="w-full text-left text-xs">
+            <thead class="bg-slate-100 dark:bg-slate-800 text-slate-500 uppercase text-[10px]">
+              <tr>
+                <th class="p-2">Date Réception</th>
+                <th class="p-2 text-right">Qté</th>
+                <th class="p-2 text-right">Prix Achat</th>
+                <th class="p-2 text-right">PMP Recalculé</th>
+              </tr>
+            </thead>
+            <tbody id="modalPriceHistoryList" class="divide-y divide-slate-100 dark:divide-slate-800"></tbody>
+          </table>
+        </div>
+      </div>
+
+      <div class="pt-2">
+        <button onclick="closeVariantDetailsModal()" class="btn-touch w-full py-2.5 rounded-xl bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 font-semibold text-xs">Fermer</button>
+      </div>
+    </div>
+  </div>
+
+
+  
+  <!-- ================= MODAL MISE À NIVEAU DU STOCK VERS QUANTITÉ D'INVENTAIRE (ARBITRAGE ANOMALIE) ================= -->
+  <div id="inventoryAdjustModal" class="fixed inset-0 z-50 hidden bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4">
+    <div class="w-full max-w-lg bg-white dark:bg-slate-900 rounded-2xl p-6 border border-slate-200 dark:border-slate-800 shadow-2xl space-y-4 max-h-[90vh] overflow-y-auto">
+      <div class="flex items-center justify-between border-b border-slate-100 dark:border-slate-800 pb-3">
+        <div class="flex items-center gap-2.5">
+          <div class="p-2 rounded-xl bg-rose-100 dark:bg-rose-950/60 text-rose-600">
+            <i data-lucide="scale" class="w-5 h-5"></i>
+          </div>
+          <div>
+            <h3 class="font-bold text-slate-900 dark:text-white text-base">Mettre à Niveau vers Quantité d'Inventaire</h3>
+            <p class="text-xs text-slate-500">Arbitrage de l'écart & archivage dans le sous-onglet Anomalies</p>
+          </div>
+        </div>
+        <button onclick="closeAdjustStockModal()" class="p-1 rounded-lg text-slate-400 hover:text-slate-600">
+          <i data-lucide="x" class="w-5 h-5"></i>
+        </button>
+      </div>
+
+      <!-- Récapitulatif article -->
+      <div class="p-3.5 rounded-xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700 space-y-2">
+        <div class="flex items-center justify-between">
+          <span class="font-extrabold text-sm font-mono text-slate-900 dark:text-white" id="adjustModalRef">REF</span>
+          <div id="adjustModalColor" class="flex items-center gap-2"></div>
+        </div>
+        <div class="text-xs text-slate-500" id="adjustModalDesignation">Designation</div>
+        <div class="flex items-center justify-between pt-1 border-t border-slate-200/80 dark:border-slate-700/80 text-xs">
+          <span class="text-slate-500">Stock Théorique Actuel :</span>
+          <span class="font-bold font-mono text-slate-800 dark:text-slate-200" id="adjustModalRealStock">0</span>
+        </div>
+      </div>
+
+      <!-- Choix rapide de quantité d'inventaire -->
+      <div class="space-y-2">
+        <label class="block text-xs font-bold text-slate-700 dark:text-slate-300">Quantité d'Inventaire Retenue *</label>
+        <div class="grid grid-cols-2 gap-2">
+          <button type="button" id="adjustBtnChooseP1" class="py-2 px-3 rounded-xl border border-indigo-200 dark:border-indigo-800 bg-indigo-50/50 dark:bg-indigo-950/40 text-indigo-700 dark:text-indigo-300 text-xs font-semibold hover:bg-indigo-100 transition-colors truncate">
+            Retenir Personne 1
+          </button>
+          <button type="button" id="adjustBtnChooseP2" class="py-2 px-3 rounded-xl border border-indigo-200 dark:border-indigo-800 bg-indigo-50/50 dark:bg-indigo-950/40 text-indigo-700 dark:text-indigo-300 text-xs font-semibold hover:bg-indigo-100 transition-colors truncate">
+            Retenir Personne 2
+          </button>
+        </div>
+        <input 
+          type="number" 
+          step="any" 
+          min="0" 
+          id="adjustModalChosenQty" 
+          oninput="calculateAdjustDiff()"
+          class="w-full px-3 py-2 rounded-xl border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-900 text-sm font-mono font-bold focus:ring-2 focus:ring-rose-500 outline-none"
+        >
+      </div>
+
+      <!-- Calcul d'écart et impact financier -->
+      <div class="grid grid-cols-2 gap-3 p-3 rounded-xl bg-slate-100 dark:bg-slate-800/80 text-xs">
+        <div>
+          <span class="text-slate-500 block">Écart de Stock :</span>
+          <span id="adjustModalDiffDisplay" class="font-bold font-mono text-slate-800">0</span>
+        </div>
+        <div class="text-right">
+          <span class="text-slate-500 block">Impact Financier :</span>
+          <span id="adjustModalFinancialImpact" class="font-bold font-mono text-slate-800">0 DZD</span>
+        </div>
+      </div>
+
+      <!-- Champ OBLIGATOIRE : Motif de l'anomalie -->
+      <div class="space-y-1.5">
+        <label class="block text-xs font-bold text-slate-700 dark:text-slate-300">
+          <span>Motif de l'Anomalie *</span>
+          <span class="text-rose-600 font-normal">(Requis pour traçabilité)</span>
+        </label>
+        <select 
+          id="adjustModalReasonSelect" 
+          onchange="onAdjustReasonSelectChange()"
+          class="w-full px-3 py-2 rounded-xl text-xs font-medium border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-900 focus:ring-2 focus:ring-rose-500 outline-none"
+        >
+          <option value="">-- Sélectionner un motif d'anomalie --</option>
+          <option value="Chute de coupe non déclarée en atelier">Chute de coupe non déclarée en atelier</option>
+          <option value="Casse / Chute lors de la manipulation">Casse / Chute lors de la manipulation</option>
+          <option value="Oubli de bon de sortie pour chantier">Oubli de bon de sortie pour chantier</option>
+          <option value="Erreur de saisie lors d'une réception précédente">Erreur de saisie lors d'une réception précédente</option>
+          <option value="Profilé rebuté pour défaut de laquage / extrusion">Profilé rebuté pour défaut de laquage / extrusion</option>
+          <option value="Écart physique inexpliqué / Perte">Écart physique inexpliqué / Perte</option>
+          <option value="AUTRE">Autre motif personnalisé...</option>
+        </select>
+        
+        <div id="adjustCustomReasonWrapper" class="hidden mt-2">
+          <input 
+            type="text" 
+            id="adjustModalCustomReason" 
+            placeholder="Précisez le motif exact de l'anomalie..." 
+            class="w-full px-3 py-2 rounded-xl text-xs border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-900 focus:ring-2 focus:ring-rose-500 outline-none"
+          >
+        </div>
+      </div>
+
+      <!-- Notes & Opérateur -->
+      <div class="space-y-2 text-xs">
+        <div>
+          <label class="block font-semibold mb-1 text-slate-700 dark:text-slate-300">Commentaires / Justification complémentaire</label>
+          <textarea id="adjustModalNotes" rows="2" placeholder="Détails sur la vérification physique ou l'arbitrage..." class="w-full px-3 py-1.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 outline-none"></textarea>
+        </div>
+        <div>
+          <label class="block font-semibold mb-1 text-slate-700 dark:text-slate-300">Validé par :</label>
+          <input type="text" id="adjustModalOperator" value="Responsable Atelier" class="w-full px-3 py-1.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 outline-none">
+        </div>
+      </div>
+
+      <!-- Actions modale -->
+      <div class="flex items-center gap-3 pt-2">
+        <button type="button" onclick="closeAdjustStockModal()" class="btn-touch flex-1 py-2.5 rounded-xl border border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300 font-semibold text-xs">
+          Annuler
+        </button>
+        <button type="button" onclick="submitAdjustStock()" class="btn-touch flex-1 py-2.5 rounded-xl bg-rose-600 hover:bg-rose-700 text-white font-bold text-xs shadow-md shadow-rose-600/30 flex items-center justify-center gap-1.5">
+          <i data-lucide="check" class="w-4 h-4"></i>
+          <span>Valider la Mise à Niveau</span>
+        </button>
+      </div>
+    </div>
+  </div>
+
+
+  <!-- ================= MODAL PRÉVISUALISATION IMAGE AGRANDIE (AVEC RÉF & DÉSIGNATION) ================= -->
+  <div id="modalImagePreview" class="fixed inset-0 z-50 hidden bg-slate-950/80 backdrop-blur-md flex items-center justify-center p-3 sm:p-6" onclick="handleImagePreviewBackdropClick(event)">
+    <div class="relative w-full max-w-2xl bg-white dark:bg-slate-900 rounded-3xl p-4 sm:p-6 border border-slate-200 dark:border-slate-800 shadow-2xl space-y-4 max-h-[92vh] flex flex-col items-center">
+      
+      <!-- En-tête : Référence + Désignation + Bouton Fermer -->
+      <div class="w-full flex items-start justify-between gap-3 border-b border-slate-100 dark:border-slate-800 pb-3">
+        <div class="min-w-0 flex-1">
+          <div class="flex items-center gap-2">
+            <span class="px-2.5 py-1 rounded-lg bg-indigo-100 dark:bg-indigo-950/80 text-indigo-700 dark:text-indigo-300 font-mono font-extrabold text-sm sm:text-base border border-indigo-200 dark:border-indigo-800" id="previewModalRef">REF</span>
+            <span class="text-xs text-slate-400 font-medium">Vue Agrandie Profilé / Accessoire</span>
+          </div>
+          <h3 class="font-bold text-sm sm:text-base text-slate-900 dark:text-white mt-1.5 truncate" id="previewModalDesignation">Désignation</h3>
+        </div>
+
+        <button onclick="closeImagePreview()" class="btn-touch p-2 rounded-xl bg-slate-100 dark:bg-slate-800 text-slate-500 hover:text-slate-800 dark:hover:text-white hover:bg-slate-200 dark:hover:bg-slate-700 transition-colors" title="Fermer (Échap)">
+          <i data-lucide="x" class="w-5 h-5"></i>
+        </button>
+      </div>
+
+      <!-- Zone Image Principale Agrandie -->
+      <div class="w-full flex-1 min-h-[250px] max-h-[65vh] flex items-center justify-center bg-slate-50 dark:bg-slate-950/60 rounded-2xl p-3 border border-slate-100 dark:border-slate-800/80 overflow-hidden">
+        <img id="previewModalImg" src="" alt="Aperçu article" class="max-h-full max-w-full object-contain rounded-xl shadow-lg transition-transform hover:scale-105 duration-200">
+      </div>
+
+      <!-- Pied de modale : bouton ouvrir plein écran ou fermer -->
+      <div class="w-full flex items-center justify-between gap-3 pt-1">
+        <a id="previewModalOpenTab" href="#" target="_blank" class="text-xs font-semibold text-indigo-600 dark:text-indigo-400 hover:underline flex items-center gap-1.5">
+          <i data-lucide="external-link" class="w-3.5 h-3.5"></i>
+          <span>Ouvrir dans un nouvel onglet</span>
+        </a>
+        <button onclick="closeImagePreview()" class="btn-touch px-4 py-2 rounded-xl bg-slate-800 dark:bg-slate-700 hover:bg-slate-900 text-white font-bold text-xs shadow-sm">
+          Fermer
+        </button>
+      </div>
+
+    </div>
+  </div>
+
+
+  <!-- ================= TOAST NOTIFICATION CONTAINER ================= -->
+  <div id="toastContainer" class="fixed bottom-20 lg:bottom-6 right-4 z-50 flex flex-col gap-2 max-w-sm pointer-events-none"></div>
+
+  <!-- Scripts Application Frontend (Versionnés pour éviter le cache navigateur) -->
+  <script src="/static/js/app.js?v=2.2"></script>
+  <script src="/static/js/dashboard.js?v=2.2"></script>
+  <script src="/static/js/stock.js?v=2.2"></script>
+  <script src="/static/js/actions.js?v=2.2"></script>
+  <script src="/static/js/movements.js?v=2.2"></script>
+  <script src="/static/js/orders.js?v=2.2"></script>
+  <script src="/static/js/settings.js?v=2.2"></script>
+  <script src="/static/js/inventory.js?v=2.2"></script>
+
+  <script>
+    document.addEventListener('DOMContentLoaded', () => {
+      lucide.createIcons();
+      initApp();
+    });
+  </script>
+</body>
+</html>

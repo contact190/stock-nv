@@ -1,0 +1,236 @@
+/* Style personnalisé et optimisations UX Mobile-First */
+@import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap');
+
+:root {
+  --primary: #4f46e5;
+  --primary-hover: #4338ca;
+  --emerald: #10b981;
+  --amber: #f59e0b;
+  --rose: #f43f5e;
+  --slate-bg: #0f172a;
+  --slate-card: #1e293b;
+  --slate-border: #334155;
+  --font-main: 'Plus Jakarta Sans', system-ui, -apple-system, sans-serif;
+}
+
+* {
+  font-family: var(--font-main);
+  -webkit-tap-highlight-color: transparent;
+  box-sizing: border-box;
+}
+
+body {
+  background-color: #f8fafc;
+  color: #0f172a;
+  overflow-x: hidden;
+  touch-action: manipulation;
+}
+
+.dark body, body.dark-mode {
+  background-color: #0b0f19;
+  color: #f1f5f9;
+}
+
+/* Scrollbars modernes et fines */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: #cbd5e1;
+  border-radius: 9999px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: #94a3b8;
+}
+
+/* Scrollbar horizontal synchronisé en haut & en bas (Tableaux Stock & Mouvements) */
+.top-scroll-sync {
+  overflow-x: auto;
+  overflow-y: hidden;
+  height: 14px;
+  cursor: pointer;
+}
+.top-scroll-sync::-webkit-scrollbar,
+.table-scroll-sync::-webkit-scrollbar {
+  height: 8px;
+}
+.top-scroll-sync::-webkit-scrollbar-track,
+.table-scroll-sync::-webkit-scrollbar-track {
+  background: rgba(226, 232, 240, 0.6);
+  border-radius: 9999px;
+}
+.top-scroll-sync::-webkit-scrollbar-thumb,
+.table-scroll-sync::-webkit-scrollbar-thumb {
+  background: #6366f1;
+  border-radius: 9999px;
+}
+.top-scroll-sync::-webkit-scrollbar-thumb:hover,
+.table-scroll-sync::-webkit-scrollbar-thumb:hover {
+  background: #4f46e5;
+}
+.dark-mode .top-scroll-sync::-webkit-scrollbar-track,
+.dark-mode .table-scroll-sync::-webkit-scrollbar-track {
+  background: rgba(30, 41, 59, 0.8);
+}
+.dark-mode .top-scroll-sync::-webkit-scrollbar-thumb,
+.dark-mode .table-scroll-sync::-webkit-scrollbar-thumb {
+  background: #818cf8;
+}
+
+/* Glassmorphism élégant */
+.glass-panel {
+  background: rgba(255, 255, 255, 0.85);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border: 1px solid rgba(226, 232, 240, 0.8);
+}
+.dark-mode .glass-panel {
+  background: rgba(17, 24, 39, 0.85);
+  border: 1px solid rgba(55, 65, 81, 0.6);
+}
+
+/* Effets de cartes et micro-interactions */
+.metric-card {
+  transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+}
+.metric-card:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 12px 24px -10px rgba(0, 0, 0, 0.08);
+}
+
+/* Boutons tactiles mobile (min 44px) */
+.btn-touch {
+  min-height: 44px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  user-select: none;
+  touch-action: manipulation;
+  transition: all 0.15s ease-out;
+}
+.btn-touch:active {
+  transform: scale(0.97);
+}
+
+/* Pastilles de couleur pour les déclinaisons */
+.color-bubble {
+  width: 18px;
+  height: 18px;
+  border-radius: 9999px;
+  border: 2px solid #ffffff;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.2);
+  display: inline-block;
+  flex-shrink: 0;
+}
+
+/* Bottom Navigation Bar mobile */
+.mobile-bottom-nav {
+  position: fixed;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  z-index: 50;
+  padding-bottom: env(safe-area-inset-bottom, 0px);
+  background: rgba(255, 255, 255, 0.95);
+  backdrop-filter: blur(16px);
+  border-top: 1px solid #e2e8f0;
+  box-shadow: 0 -4px 16px rgba(0, 0, 0, 0.04);
+}
+.dark-mode .mobile-bottom-nav {
+  background: rgba(15, 23, 42, 0.95);
+  border-top-color: #334155;
+  box-shadow: 0 -4px 16px rgba(0, 0, 0, 0.25);
+}
+
+/* Nav Item Touch */
+.nav-touch-item {
+  position: relative;
+  transition: all 0.2s ease;
+}
+.nav-touch-item.active {
+  color: #4f46e5;
+  font-weight: 700;
+}
+.dark-mode .nav-touch-item.active {
+  color: #818cf8;
+}
+.nav-touch-item.active .nav-indicator {
+  transform: scaleX(1);
+}
+
+.nav-indicator {
+  position: absolute;
+  top: 0;
+  left: 25%;
+  right: 25%;
+  height: 3px;
+  background: #4f46e5;
+  border-radius: 0 0 3px 3px;
+  transform: scaleX(0);
+  transition: transform 0.2s ease;
+}
+
+/* Espacement du bas pour que le contenu ne soit jamais masqué par la bottom nav */
+.content-bottom-padding {
+  padding-bottom: 5.5rem;
+}
+@media (min-width: 1024px) {
+  .content-bottom-padding {
+    padding-bottom: 2rem;
+  }
+}
+
+/* Animation de notification Toast */
+.toast-enter {
+  animation: slideInUp 0.3s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+.toast-exit {
+  animation: slideOutDown 0.3s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+@keyframes slideInUp {
+  from {
+    transform: translateY(100%);
+    opacity: 0;
+  }
+  to {
+    transform: translateY(0);
+    opacity: 1;
+  }
+}
+@keyframes slideOutDown {
+  from {
+    transform: translateY(0);
+    opacity: 1;
+  }
+  to {
+    transform: translateY(100%);
+    opacity: 0;
+  }
+}
+
+/* Animation Pulse sur les alertes */
+@keyframes softPulse {
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50% { opacity: 0.85; transform: scale(1.02); }
+}
+.pulse-badge {
+  animation: softPulse 2.5s infinite ease-in-out;
+}
+
+/* Modals Mobile Bottom Sheet */
+@media (max-width: 768px) {
+  .modal-sheet {
+    align-items: flex-end !important;
+  }
+  .modal-sheet-content {
+    border-bottom-left-radius: 0 !important;
+    border-bottom-right-radius: 0 !important;
+    max-height: 90vh !important;
+    overflow-y: auto !important;
+  }
+}

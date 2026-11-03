@@ -1,0 +1,23 @@
+# Environment variables & secrets
+.env
+*.env
+
+# Python artifacts
+__pycache__/
+*.py[cod]
+*$py.class
+.pytest_cache/
+.coverage
+htmlcov/
+
+# Local databases & heavy files
+stock.db
+stock.db-journal
+sheet_data.xlsx
+skipped_articles_report.json
+
+# Agents & IDEs
+.agents/
+skills-lock.json
+.vscode/
+.idea/
