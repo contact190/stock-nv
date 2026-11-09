@@ -12,6 +12,7 @@ htmlcov/
 
 # Local databases & heavy files
 stock.db-journal
+*.bak
 sheet_data.xlsx
 skipped_articles_report.json
 
