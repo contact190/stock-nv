@@ -10,8 +10,8 @@ from typing import Optional, Dict, Any, List
 logger = logging.getLogger("supabase_sync")
 
 def get_supabase_credentials():
-    url = os.environ.get("SUPABASE_URL", "").rstrip("/")
-    key = os.environ.get("SUPABASE_KEY", "")
+    url = os.environ.get("SUPABASE_URL", "").strip().strip('"').strip("'").rstrip("/")
+    key = os.environ.get("SUPABASE_KEY", "").strip().strip('"').strip("'")
 
     if not url or not key:
         env_path = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), ".env")
@@ -58,6 +58,7 @@ def _supabase_request(endpoint: str, method: str = "GET", data: Any = None, head
         with urllib.request.urlopen(req, timeout=10) as resp:
             status = resp.status
             body = resp.read().decode("utf-8", errors="ignore")
+            print(f"[SUPABASE SYNC OK] {method} {endpoint} -> HTTP {status}")
             if body:
                 try:
                     return json.loads(body)
@@ -66,9 +67,11 @@ def _supabase_request(endpoint: str, method: str = "GET", data: Any = None, head
             return {"status": status}
     except urllib.error.HTTPError as e:
         err_msg = e.read().decode("utf-8", errors="ignore")
+        print(f"[SUPABASE ERROR] HTTP {e.code} on {method} {endpoint}: {err_msg}")
         logger.error(f"Supabase HTTP {e.code} on {method} {endpoint}: {err_msg}")
         return None
     except Exception as e:
+        print(f"[SUPABASE ERROR] on {method} {endpoint}: {e}")
         logger.error(f"Supabase request failed on {method} {endpoint}: {e}")
         return None
 

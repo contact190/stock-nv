@@ -16,12 +16,31 @@ router = APIRouter(prefix="/api/settings", tags=["Paramètres"])
 
 @router.get("/cloud-status")
 def get_cloud_status():
-    """Vérifie l'état de la synchronisation Supabase Cloud."""
-    enabled = is_supabase_enabled()
+    """Vérifie l'état de la synchronisation Supabase Cloud avec test direct de connexion."""
+    from app.supabase_sync import get_supabase_credentials, _supabase_request
+    url, key = get_supabase_credentials()
+    has_url = bool(url)
+    has_key = bool(key)
+
+    conn_ok = False
+    details = ""
+    if has_url and has_key:
+        test_res = _supabase_request("colors?select=id&limit=1")
+        if isinstance(test_res, list):
+            conn_ok = True
+            details = f"Connexion Supabase active ({len(test_res)} lignes test)"
+        else:
+            details = f"Échec requête Supabase: {test_res}"
+    else:
+        details = "Variables d'environnement SUPABASE_URL ou SUPABASE_KEY manquantes sur le serveur"
+
     return {
-        "cloud_enabled": enabled,
-        "provider": "Supabase PostgreSQL Cloud" if enabled else "Local SQLite Only",
-        "status": "CONNECTÉ" if enabled else "DÉCONNECTÉ"
+        "cloud_enabled": has_url and has_key,
+        "connected": conn_ok,
+        "supabase_url": url[:18] + "..." if url else None,
+        "has_key": has_key,
+        "details": details,
+        "status": "CONNECTÉ" if conn_ok else "DÉCONNECTÉ"
     }
 
 @router.post("/cloud-pull")
