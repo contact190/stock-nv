@@ -251,35 +251,12 @@ def init_db():
     if "is_anonyme" not in mvt_cols:
         cursor.execute("ALTER TABLE movements ADD COLUMN is_anonyme INTEGER DEFAULT 0")
 
-    # Peuplement workshop_cases si vide
-    cursor.execute("SELECT COUNT(*) as cnt FROM workshop_cases")
-    if cursor.fetchone()["cnt"] == 0:
-        cases = [
-            ("PROFILE", "P-01", "Rack Vertical Profilés Dormants"),
-            ("PROFILE", "P-02", "Rack Vertical Profilés Ouvrants"),
-            ("PROFILE", "P-03", "Casier Horizontal Barres 6m"),
-            ("PROFILE", "P-04", "Casier Coulissants 70mm"),
-            ("PROFILE", "P-05", "Rack Lames Extrudées"),
-            ("ACCESSOIRE", "A-01", "Bac Équerres & Quincaillerie"),
-            ("ACCESSOIRE", "A-02", "Étagère Crémones & Poignées"),
-            ("ACCESSOIRE", "A-03", "Bac Joints Brosse & EPDM"),
-            ("ACCESSOIRE", "A-04", "Casier Coulisses VR 45mm")
-        ]
-        cursor.executemany("INSERT OR IGNORE INTO workshop_cases (type, code, description) VALUES (?, ?, ?)", cases)
-
-    # Peuplement Nuancier / Couleurs si vide (défaut : RAL 7024 en tête)
+    # Peuplement Nuancier / Couleurs si vide : uniquement 7024 et Noir 7016
     cursor.execute("SELECT COUNT(*) as cnt FROM colors")
     if cursor.fetchone()["cnt"] == 0:
         default_colors = [
             ("RAL 7024", "RAL 7024", "#474a51"),
-            ("Blanc Pur RAL 9010", "RAL 9010", "#f8fafc"),
-            ("Blanc Trafic RAL 9016", "RAL 9016", "#f1f5f9"),
-            ("Gris Anthracite RAL 7016", "RAL 7016", "#334155"),
-            ("Noir Sablé RAL 2100", "RAL 2100", "#020617"),
-            ("Noir Foncé RAL 9005", "RAL 9005", "#0f172a"),
-            ("Alu Gris Métal RAL 9006", "RAL 9006", "#94a3b8"),
-            ("Ivoire Clair RAL 1013", "RAL 1013", "#fef3c7"),
-            ("Brun Sépia RAL 8014", "RAL 8014", "#78350f")
+            ("Noir 7016", "RAL 7016", "#334155")
         ]
         cursor.executemany("INSERT OR IGNORE INTO colors (name, ral_code, hex_code) VALUES (?, ?, ?)", default_colors)
 
