@@ -2,8 +2,33 @@ from fastapi import APIRouter, HTTPException
 from typing import Optional
 from app.models import CategoryModel, GammeModel, UnitModel, WorkshopCaseModel, ColorModel
 from app.database import get_db
+from app.supabase_sync import (
+    is_supabase_enabled,
+    sync_category_to_cloud,
+    sync_gamme_to_cloud,
+    sync_unit_to_cloud,
+    sync_workshop_case_to_cloud,
+    sync_color_to_cloud,
+    pull_all_from_supabase_to_sqlite
+)
 
 router = APIRouter(prefix="/api/settings", tags=["Paramètres"])
+
+@router.get("/cloud-status")
+def get_cloud_status():
+    """Vérifie l'état de la synchronisation Supabase Cloud."""
+    enabled = is_supabase_enabled()
+    return {
+        "cloud_enabled": enabled,
+        "provider": "Supabase PostgreSQL Cloud" if enabled else "Local SQLite Only",
+        "status": "CONNECTÉ" if enabled else "DÉCONNECTÉ"
+    }
+
+@router.post("/cloud-pull")
+def trigger_cloud_pull():
+    """Force le rechargement des données depuis Supabase Cloud."""
+    pull_all_from_supabase_to_sqlite()
+    return {"success": True, "message": "Synchronisation cloud terminée avec succès."}
 
 @router.get("/all")
 def get_all_settings():
@@ -75,6 +100,10 @@ def add_workshop_case(data: WorkshopCaseModel):
         case_id = cursor.lastrowid
         conn.commit()
         conn.close()
+        try:
+            sync_workshop_case_to_cloud(clean_type, code, data.description.strip() if data.description else "")
+        except Exception:
+            pass
         return {"success": True, "id": case_id, "type": clean_type, "code": code}
     except Exception:
         conn.close()
@@ -84,9 +113,19 @@ def add_workshop_case(data: WorkshopCaseModel):
 def delete_workshop_case(case_id: int):
     conn = get_db()
     cursor = conn.cursor()
+    cursor.execute("SELECT code FROM workshop_cases WHERE id = ?", (case_id,))
+    row = cursor.fetchone()
+    case_code = row["code"] if row else None
+
     cursor.execute("DELETE FROM workshop_cases WHERE id = ?", (case_id,))
     conn.commit()
     conn.close()
+
+    if case_code:
+        try:
+            sync_workshop_case_to_cloud("", case_code, delete=True)
+        except Exception:
+            pass
     return {"success": True, "message": "Case atelier supprimée"}
 
 
@@ -100,6 +139,10 @@ def add_category(data: CategoryModel):
         cat_id = cursor.lastrowid
         conn.commit()
         conn.close()
+        try:
+            sync_category_to_cloud(data.name.strip(), data.description or "")
+        except Exception:
+            pass
         return {"success": True, "id": cat_id, "name": data.name}
     except Exception:
         conn.close()
@@ -109,9 +152,19 @@ def add_category(data: CategoryModel):
 def delete_category(cat_id: int):
     conn = get_db()
     cursor = conn.cursor()
+    cursor.execute("SELECT name FROM categories WHERE id = ?", (cat_id,))
+    row = cursor.fetchone()
+    cat_name = row["name"] if row else None
+
     cursor.execute("DELETE FROM categories WHERE id = ?", (cat_id,))
     conn.commit()
     conn.close()
+
+    if cat_name:
+        try:
+            sync_category_to_cloud(cat_name, delete=True)
+        except Exception:
+            pass
     return {"success": True, "message": "Catégorie supprimée"}
 
 # --- Gammes ---
@@ -124,6 +177,10 @@ def add_gamme(data: GammeModel):
         g_id = cursor.lastrowid
         conn.commit()
         conn.close()
+        try:
+            sync_gamme_to_cloud(data.name.strip(), data.description or "")
+        except Exception:
+            pass
         return {"success": True, "id": g_id, "name": data.name}
     except Exception:
         conn.close()
@@ -133,9 +190,19 @@ def add_gamme(data: GammeModel):
 def delete_gamme(gamme_id: int):
     conn = get_db()
     cursor = conn.cursor()
+    cursor.execute("SELECT name FROM gammes WHERE id = ?", (gamme_id,))
+    row = cursor.fetchone()
+    gamme_name = row["name"] if row else None
+
     cursor.execute("DELETE FROM gammes WHERE id = ?", (gamme_id,))
     conn.commit()
     conn.close()
+
+    if gamme_name:
+        try:
+            sync_gamme_to_cloud(gamme_name, delete=True)
+        except Exception:
+            pass
     return {"success": True, "message": "Gamme supprimée"}
 
 # --- Unités ---
@@ -148,6 +215,10 @@ def add_unit(data: UnitModel):
         u_id = cursor.lastrowid
         conn.commit()
         conn.close()
+        try:
+            sync_unit_to_cloud(data.name.strip(), data.symbol.strip())
+        except Exception:
+            pass
         return {"success": True, "id": u_id, "name": data.name, "symbol": data.symbol}
     except Exception:
         conn.close()
@@ -157,9 +228,19 @@ def add_unit(data: UnitModel):
 def delete_unit(unit_id: int):
     conn = get_db()
     cursor = conn.cursor()
+    cursor.execute("SELECT name FROM units WHERE id = ?", (unit_id,))
+    row = cursor.fetchone()
+    unit_name = row["name"] if row else None
+
     cursor.execute("DELETE FROM units WHERE id = ?", (unit_id,))
     conn.commit()
     conn.close()
+
+    if unit_name:
+        try:
+            sync_unit_to_cloud(unit_name, delete=True)
+        except Exception:
+            pass
     return {"success": True, "message": "Unité supprimée"}
 
 # --- Nuancier & Couleurs RAL ---
@@ -185,6 +266,10 @@ def add_color(data: ColorModel):
         c_id = cursor.lastrowid
         conn.commit()
         conn.close()
+        try:
+            sync_color_to_cloud(clean_name, clean_ral, clean_hex)
+        except Exception:
+            pass
         return {"success": True, "id": c_id, "name": clean_name, "ral_code": clean_ral, "hex_code": clean_hex}
     except Exception:
         conn.close()
@@ -194,9 +279,19 @@ def add_color(data: ColorModel):
 def delete_color(color_id: int):
     conn = get_db()
     cursor = conn.cursor()
+    cursor.execute("SELECT name FROM colors WHERE id = ?", (color_id,))
+    row = cursor.fetchone()
+    color_name = row["name"] if row else None
+
     cursor.execute("DELETE FROM colors WHERE id = ?", (color_id,))
     conn.commit()
     conn.close()
+
+    if color_name:
+        try:
+            sync_color_to_cloud(color_name, delete=True)
+        except Exception:
+            pass
     return {"success": True, "message": "Couleur supprimée"}
 
 # --- Réinitialisation Démo ---

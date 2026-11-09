@@ -7,6 +7,7 @@ from app.services import (
     reserve_operation,
     batch_reserve_operation
 )
+from app.supabase_sync import sync_variant_by_id, sync_latest_movement
 
 router = APIRouter(prefix="/api/actions", tags=["Actions"])
 
@@ -20,6 +21,12 @@ def action_stock_in(data: StockInRequest):
     """
     try:
         result = stock_in_operation(data)
+        try:
+            if result.get("variant_id"):
+                sync_variant_by_id(result["variant_id"])
+            sync_latest_movement()
+        except Exception:
+            pass
         return result
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
@@ -33,6 +40,11 @@ def action_destock(data: DestockRequest):
     """
     try:
         result = destock_operation(data)
+        try:
+            sync_variant_by_id(data.variant_id)
+            sync_latest_movement()
+        except Exception:
+            pass
         return result
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
@@ -46,6 +58,12 @@ def action_destock_batch(data: BatchDestockRequest):
     """
     try:
         result = batch_destock_operation(data)
+        try:
+            for item in data.items:
+                sync_variant_by_id(item.variant_id)
+            sync_latest_movement()
+        except Exception:
+            pass
         return result
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
@@ -59,6 +77,11 @@ def action_reserve(data: ReserveRequest):
     """
     try:
         result = reserve_operation(data)
+        try:
+            sync_variant_by_id(data.variant_id)
+            sync_latest_movement()
+        except Exception:
+            pass
         return result
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
@@ -72,6 +95,12 @@ def action_reserve_batch(data: BatchReserveRequest):
     """
     try:
         result = batch_reserve_operation(data)
+        try:
+            for item in data.items:
+                sync_variant_by_id(item.variant_id)
+            sync_latest_movement()
+        except Exception:
+            pass
         return result
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))

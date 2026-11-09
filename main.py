@@ -6,12 +6,18 @@ from fastapi.middleware.cors import CORSMiddleware
 from contextlib import asynccontextmanager
 
 from app.database import init_db
+from app.supabase_sync import pull_all_from_supabase_to_sqlite
 from app.routers import dashboard, stock, actions, movements, orders, settings, inventory
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    # Initialisation de la base de données et des données de démo au démarrage
+    # Initialisation de la structure de base de données
     init_db()
+    # Chargement automatique de l'état persistant depuis Supabase Cloud au démarrage
+    try:
+        pull_all_from_supabase_to_sqlite()
+    except Exception as e:
+        print(f"Cloud sync warning on startup: {e}")
     yield
 
 app = FastAPI(

@@ -7,6 +7,7 @@ import re
 from app.services import get_products_with_variants, create_catalog_product
 from app.models import CatalogProductCreate, VariantUpdateRequest
 from app.database import get_db
+from app.supabase_sync import sync_product_to_cloud, sync_variant_to_cloud
 
 router = APIRouter(prefix="/api/stock", tags=["Stock"])
 
@@ -34,9 +35,40 @@ def add_product_to_catalog(data: CatalogProductCreate):
     """
     Création d'un nouvel article dans le Catalogue Maître.
     Bloque avec une erreur explicite toute tentative de doublon [Référence + Couleur].
+    Synchronise instantanément avec Supabase Cloud.
     """
     try:
         result = create_catalog_product(data)
+        try:
+            sync_product_to_cloud({
+                "reference": data.reference.strip().upper(),
+                "designation": data.designation.strip(),
+                "category": data.category,
+                "gamme": data.gamme,
+                "unit": data.unit,
+                "image_url": data.image_url or "",
+                "threshold": data.threshold,
+                "supplier": data.supplier,
+                "location": data.location
+            })
+            sync_variant_to_cloud({
+                "product_reference": data.reference.strip().upper(),
+                "color": data.color.strip(),
+                "ral_code": data.ral_code or "",
+                "color_hex": data.color_hex or "#64748b",
+                "barcode": data.barcode or f"BAR-{data.reference.strip().upper()}-{data.color.strip()}",
+                "initial_quantity": data.initial_quantity,
+                "real_quantity": data.initial_quantity,
+                "reserved_quantity": 0.0,
+                "threshold": data.threshold,
+                "current_price": data.unit_price,
+                "previous_price": data.unit_price,
+                "pmp": data.unit_price,
+                "supplier": data.supplier,
+                "location": data.location
+            })
+        except Exception:
+            pass
         return result
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
@@ -131,7 +163,17 @@ def update_variant(variant_id: int, data: VariantUpdateRequest):
     params.append(variant_id)
     cursor.execute(f"UPDATE variants SET {', '.join(updates)} WHERE id = ?", params)
     conn.commit()
+
+    cursor.execute("SELECT * FROM variants WHERE id = ?", (variant_id,))
+    updated_row = cursor.fetchone()
     conn.close()
+
+    if updated_row:
+        try:
+            sync_variant_to_cloud(dict(updated_row))
+        except Exception:
+            pass
+
     return {"success": True, "message": "Variante mise à jour avec succès"}
 
 @router.post("/upload-image")
