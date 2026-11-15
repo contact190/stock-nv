@@ -271,6 +271,51 @@ def init_db():
     if "cloud_dirty" not in variant_cols:
         cursor.execute("ALTER TABLE variants ADD COLUMN cloud_dirty INTEGER DEFAULT 0")
 
+    # File d'attente générique : chaque création / modification / suppression des données
+    # (articles, réglages, commandes, inventaire, historique des prix) est notée ici
+    # et renvoyée vers Supabase tant que l'envoi n'a pas réussi.
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS sync_queue (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            tbl TEXT NOT NULL,
+            row_key TEXT NOT NULL,
+            op TEXT NOT NULL,
+            created_at TEXT DEFAULT CURRENT_TIMESTAMP
+        )
+    """)
+
+    def _queue_triggers(table, key_new, key_old, upsert_op="upsert", delete_op="delete", queue_tbl=None, on_update=True, on_delete=True):
+        qt = queue_tbl or table
+        cursor.execute(f"""
+            CREATE TRIGGER IF NOT EXISTS trg_q_{table}_ins AFTER INSERT ON {table}
+            BEGIN INSERT INTO sync_queue (tbl, row_key, op) VALUES ('{qt}', {key_new}, '{upsert_op}'); END
+        """)
+        if on_update:
+            cursor.execute(f"""
+                CREATE TRIGGER IF NOT EXISTS trg_q_{table}_upd AFTER UPDATE ON {table}
+                BEGIN
+                    INSERT INTO sync_queue (tbl, row_key, op) SELECT '{qt}', {key_old}, '{delete_op}' WHERE {key_old} IS NOT {key_new} AND '{delete_op}' = 'delete';
+                    INSERT INTO sync_queue (tbl, row_key, op) VALUES ('{qt}', {key_new}, '{upsert_op}');
+                END
+            """)
+        if on_delete:
+            cursor.execute(f"""
+                CREATE TRIGGER IF NOT EXISTS trg_q_{table}_del AFTER DELETE ON {table}
+                BEGIN INSERT INTO sync_queue (tbl, row_key, op) VALUES ('{qt}', {key_old}, '{delete_op}'); END
+            """)
+
+    _queue_triggers("products", "NEW.reference", "OLD.reference")
+    for t in ("categories", "gammes", "units", "colors"):
+        _queue_triggers(t, "NEW.name", "OLD.name")
+    _queue_triggers("workshop_cases", "NEW.code", "OLD.code")
+    _queue_triggers("orders", "NEW.order_number", "OLD.order_number")
+    # Lignes de commande : on renvoie toutes les lignes de la commande concernée
+    _queue_triggers("order_items", "NEW.order_number", "OLD.order_number", upsert_op="replace", delete_op="replace")
+    _queue_triggers("inventory_counts", "NEW.product_reference || '|' || NEW.color", "OLD.product_reference || '|' || OLD.color")
+    # Journaux en ajout seul
+    _queue_triggers("price_history", "NEW.id", "OLD.id", upsert_op="insert", on_update=False, on_delete=False)
+    _queue_triggers("inventory_anomalies", "NEW.id", "OLD.id", upsert_op="insert", on_update=False, on_delete=False)
+
     # Toute modification de quantité / prix / emplacement marque la variante "à envoyer"
     cursor.execute("""
         CREATE TRIGGER IF NOT EXISTS trg_variants_dirty_upd

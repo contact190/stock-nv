@@ -230,7 +230,8 @@ def push_pending_to_cloud() -> Dict[str, int]:
     Un envoi raté reste en file d'attente et sera retenté à la prochaine action
     ou au prochain démarrage du serveur : plus aucune saisie n'est perdue en silence.
     """
-    result = {"movements_sent": 0, "variants_sent": 0, "movements_pending": 0, "variants_pending": 0}
+    result = {"movements_sent": 0, "variants_sent": 0, "movements_pending": 0, "variants_pending": 0,
+              "queue_sent": 0, "queue_pending": 0}
     if not is_supabase_enabled():
         return result
 
@@ -239,7 +240,10 @@ def push_pending_to_cloud() -> Dict[str, int]:
         conn = get_db()
         cursor = conn.cursor()
         try:
-            # 1. Variantes d'abord (le stock à jour est le plus important)
+            # 0. Articles, réglages, commandes, inventaire, historique des prix
+            result["queue_sent"], result["queue_pending"] = _process_sync_queue(conn)
+
+            # 1. Variantes (le stock à jour est le plus important)
             cursor.execute("SELECT * FROM variants WHERE cloud_dirty = 1")
             for row in cursor.fetchall():
                 v = dict(row)
@@ -275,8 +279,10 @@ def push_pending_to_cloud() -> Dict[str, int]:
 
     if result["movements_sent"] or result["variants_sent"]:
         print(f"[SUPABASE SYNC] {result['movements_sent']} mouvement(s), {result['variants_sent']} variante(s) envoyés")
-    if result["movements_pending"] or result["variants_pending"]:
-        print(f"[SUPABASE SYNC] EN ATTENTE : {result['movements_pending']} mouvement(s), {result['variants_pending']} variante(s)")
+    if result["queue_sent"]:
+        print(f"[SUPABASE SYNC] {result['queue_sent']} élément(s) (articles/réglages/commandes/inventaire/prix) envoyés")
+    if result["movements_pending"] or result["variants_pending"] or result["queue_pending"]:
+        print(f"[SUPABASE SYNC] EN ATTENTE : {result['movements_pending']} mouvement(s), {result['variants_pending']} variante(s), {result['queue_pending']} autre(s)")
     return result
 
 def _upsert_variant(variant: dict) -> bool:
@@ -362,6 +368,11 @@ def pull_all_from_supabase_to_sqlite():
     from app.database import get_db
     conn = get_db()
     cursor = conn.cursor()
+    # Ce qui est rechargé depuis le Cloud ne doit pas être renvoyé vers le Cloud
+    try:
+        queue_start = cursor.execute("SELECT COALESCE(MAX(id), 0) FROM sync_queue").fetchone()[0]
+    except sqlite3.OperationalError:
+        queue_start = None
 
     try:
         # 1. Catégories
@@ -466,7 +477,322 @@ def pull_all_from_supabase_to_sqlite():
         conn.commit()
         print(f"[SUPABASE SYNC] {n_mvts} mouvement(s) rechargé(s) depuis Supabase au démarrage")
 
+        # 8. Unités, commandes, inventaire, historique des prix
+        extra = pull_extra_from_supabase(cursor)
+        conn.commit()
+        print(f"[SUPABASE SYNC] Rechargé depuis Supabase : {extra}")
+
     except Exception as e:
         logger.error(f"Error during Supabase startup pull: {e}")
+        print(f"[SUPABASE ERROR] startup pull: {e}")
     finally:
+        try:
+            if queue_start is not None:
+                cursor.execute("DELETE FROM sync_queue WHERE id > ?", (queue_start,))
+                conn.commit()
+        except Exception:
+            pass
         conn.close()
+
+
+# =============================================================================
+# FILE D'ATTENTE GÉNÉRIQUE (articles, réglages, commandes, inventaire, prix)
+# =============================================================================
+
+# Ordre d'envoi : un article doit exister dans le Cloud avant ses lignes dépendantes
+_QUEUE_PRIORITY = ["categories", "gammes", "units", "colors", "workshop_cases", "products",
+                   "orders", "order_items", "inventory_counts", "price_history", "inventory_anomalies"]
+
+def _q(v: str) -> str:
+    return urllib.parse.quote(str(v), safe="")
+
+def _ok(res) -> bool:
+    return res is not None
+
+def _row(conn, sql, params=()):
+    r = conn.execute(sql, params).fetchone()
+    return dict(r) if r else None
+
+def _upsert(table: str, conflict: str, data: dict) -> bool:
+    return _ok(_supabase_request(f"{table}?on_conflict={conflict}", method="POST", data=[data],
+                                 headers_extra={"Prefer": "resolution=merge-duplicates"}))
+
+def _delete(path: str) -> bool:
+    return _ok(_supabase_request(path, method="DELETE"))
+
+def _send_queue_item(conn, tbl: str, key: str, op: str) -> bool:
+    """Envoie un élément de la file. Renvoie True si c'est fait (ou s'il n'y a plus rien à envoyer)."""
+    if tbl == "products":
+        if op == "delete":
+            return _delete(f"products?reference=eq.{_q(key)}")
+        p = _row(conn, "SELECT * FROM products WHERE reference = ?", (key,))
+        if not p:
+            return True
+        return _upsert("products", "reference", {
+            "reference": p["reference"], "designation": p.get("designation") or p["reference"],
+            "category": p.get("category") or "", "gamme": p.get("gamme") or "",
+            "unit": p.get("unit") or "barre", "image_url": p.get("image_url") or "",
+            "threshold": float(p.get("threshold") or 10.0), "supplier": p.get("supplier") or "",
+            "location": p.get("location") or "EN_ATTENTE_AFFECTATION"})
+
+    if tbl in ("categories", "gammes", "units", "colors"):
+        if op == "delete":
+            return _delete(f"{tbl}?name=eq.{_q(key)}")
+        r = _row(conn, f"SELECT * FROM {tbl} WHERE name = ?", (key,))
+        if not r:
+            return True
+        if tbl == "units":
+            data = {"name": r["name"], "symbol": r.get("symbol") or r["name"]}
+        elif tbl == "colors":
+            data = {"name": r["name"], "ral_code": r.get("ral_code") or "", "hex_code": r.get("hex_code") or "#474a51"}
+        else:
+            data = {"name": r["name"], "description": r.get("description") or ""}
+        return _upsert(tbl, "name", data)
+
+    if tbl == "workshop_cases":
+        if op == "delete":
+            return _delete(f"workshop_cases?code=eq.{_q(key)}")
+        r = _row(conn, "SELECT * FROM workshop_cases WHERE code = ?", (key,))
+        if not r:
+            return True
+        return _upsert("workshop_cases", "code", {"type": r["type"], "code": r["code"], "description": r.get("description") or ""})
+
+    if tbl == "orders":
+        if op == "delete":
+            return _delete(f"order_items?order_number=eq.{_q(key)}") and _delete(f"orders?order_number=eq.{_q(key)}")
+        o = _row(conn, "SELECT * FROM orders WHERE order_number = ?", (key,))
+        if not o:
+            return True
+        return _upsert("orders", "order_number", {
+            "order_number": o["order_number"], "client_name": o.get("client_name") or "",
+            "status": o.get("status") or "EN_ATTENTE", "notes": o.get("notes") or ""})
+
+    if tbl == "order_items":
+        # On remplace toutes les lignes de cette commande dans le Cloud par les lignes locales
+        o = _row(conn, "SELECT * FROM orders WHERE order_number = ?", (key,))
+        if o and not _send_queue_item(conn, "orders", key, "upsert"):
+            return False
+        if not _delete(f"order_items?order_number=eq.{_q(key)}"):
+            return False
+        items = [dict(r) for r in conn.execute("SELECT * FROM order_items WHERE order_number = ? ORDER BY id", (key,)).fetchall()]
+        if not items:
+            return True
+        payload = [{
+            "order_id": it["order_id"], "order_number": it["order_number"], "variant_id": it["variant_id"],
+            "product_reference": it["product_reference"], "product_name": it.get("product_name") or "",
+            "color": it.get("color") or "", "quantity_reserved": float(it.get("quantity_reserved") or 0),
+            "quantity_destocked": float(it.get("quantity_destocked") or 0),
+            "unit_price": float(it.get("unit_price") or 0), "status": it.get("status") or "RESERVED"} for it in items]
+        return _ok(_supabase_request("order_items", method="POST", data=payload))
+
+    if tbl == "inventory_counts":
+        ref, _, color = key.partition("|")
+        if op == "delete":
+            return _delete(f"inventory_counts?product_reference=eq.{_q(ref)}&color=eq.{_q(color)}")
+        r = _row(conn, "SELECT * FROM inventory_counts WHERE product_reference = ? AND color = ?", (ref, color))
+        if not r:
+            return True
+        return _upsert("inventory_counts", "product_reference,color", {
+            "product_reference": ref, "color": color,
+            "person1_name": r.get("person1_name"), "count1": r.get("count1"),
+            "person2_name": r.get("person2_name"), "count2": r.get("count2"),
+            "expected_quantity": float(r.get("expected_quantity") or 0), "status": r.get("status") or "PENDING",
+            "is_selected": int(r.get("is_selected") or 0), "inventory_date": r.get("inventory_date"),
+            "notes": r.get("notes"), "created_at": r.get("created_at"), "updated_at": r.get("updated_at")})
+
+    if tbl == "price_history":
+        r = _row(conn, """SELECT ph.*, v.color AS v_color FROM price_history ph
+                          LEFT JOIN variants v ON v.id = ph.variant_id WHERE ph.id = ?""", (int(key),))
+        if not r:
+            return True
+        return _ok(_supabase_request("price_history", method="POST", data=[{
+            "variant_id": r["variant_id"], "product_reference": r["product_reference"], "color": r.get("v_color") or "",
+            "price": float(r.get("price") or 0), "pmp_after": float(r.get("pmp_after") or 0),
+            "quantity": float(r.get("quantity") or 0), "recorded_at": r.get("recorded_at")}]))
+
+    if tbl == "inventory_anomalies":
+        r = _row(conn, "SELECT * FROM inventory_anomalies WHERE id = ?", (int(key),))
+        if not r:
+            return True
+        data = {k: r.get(k) for k in ("product_reference", "designation", "color", "real_quantity_before",
+                                      "counted_quantity", "discrepancy_quantity", "pmp_at_adjustment",
+                                      "financial_impact", "person1_name", "count1", "person2_name", "count2",
+                                      "reason", "notes", "adjusted_by", "created_at")}
+        return _ok(_supabase_request("inventory_anomalies", method="POST", data=[data]))
+
+    return True  # table inconnue : on ne bloque pas la file
+
+def _process_sync_queue(conn):
+    """Traite la file d'attente. Un échec laisse l'élément (et ceux de la même table) pour plus tard."""
+    sent = 0
+    try:
+        rows = [dict(r) for r in conn.execute("SELECT * FROM sync_queue ORDER BY id").fetchall()]
+    except sqlite3.OperationalError:
+        return 0, 0  # table pas encore créée
+    # Dernière opération par élément (les doublons sont regroupés), sauf les ajouts de journaux
+    latest = {}
+    for r in rows:
+        k = (r["tbl"], r["row_key"]) if r["op"] != "insert" else (r["tbl"], r["row_key"], r["id"])
+        latest[k] = r
+    ordered = sorted(latest.values(), key=lambda r: (_QUEUE_PRIORITY.index(r["tbl"]) if r["tbl"] in _QUEUE_PRIORITY else 99, r["id"]))
+    failed_tables = set()
+    for r in ordered:
+        if r["tbl"] in failed_tables:
+            continue
+        ok = False
+        try:
+            ok = _send_queue_item(conn, r["tbl"], r["row_key"], r["op"])
+        except Exception as e:
+            print(f"[SUPABASE ERROR] file d'attente {r['tbl']} {r['row_key']}: {e}")
+        if ok:
+            if r["op"] == "insert":
+                conn.execute("DELETE FROM sync_queue WHERE id = ?", (r["id"],))
+            else:
+                conn.execute("DELETE FROM sync_queue WHERE tbl = ? AND row_key = ? AND id <= ? AND op != 'insert'",
+                             (r["tbl"], r["row_key"], r["id"]))
+            conn.commit()
+            sent += 1
+        else:
+            failed_tables.add(r["tbl"])
+    pending = conn.execute("SELECT COUNT(*) FROM sync_queue").fetchone()[0]
+    return sent, pending
+
+# =============================================================================
+# RECHARGEMENT AU DÉMARRAGE DES DONNÉES SUPPLÉMENTAIRES
+# =============================================================================
+
+def _ts(v) -> str:
+    return _normalize_ts(v) if v else ""
+
+def _variant_id(cursor, ref, color):
+    r = cursor.execute("SELECT id FROM variants WHERE product_reference = ? AND color = ?", (ref, color)).fetchone()
+    return r[0] if r else None
+
+def _local_count(cursor, table) -> int:
+    return cursor.execute(f"SELECT COUNT(*) FROM {table}").fetchone()[0]
+
+def _get_all(table: str) -> list:
+    out, offset = [], 0
+    while True:
+        rows = _supabase_request(f"{table}?select=*&order=id.asc&limit=1000&offset={offset}")
+        if not isinstance(rows, list) or not rows:
+            break
+        out.extend(rows)
+        if len(rows) < 1000:
+            break
+        offset += 1000
+    return out
+
+def pull_extra_from_supabase(cursor) -> dict:
+    """Recharge unités, commandes, lignes de commande, inventaire et historique des prix."""
+    stats = {}
+    # Unités
+    units = _supabase_request("units?select=name,symbol")
+    if isinstance(units, list):
+        for u in units:
+            cursor.execute("INSERT OR IGNORE INTO units (name, symbol) VALUES (?, ?)", (u["name"], u.get("symbol") or u["name"]))
+        stats["unités"] = len(units)
+
+    # Commandes
+    orders = _get_all("orders")
+    for o in orders:
+        cursor.execute("""INSERT OR IGNORE INTO orders (order_number, client_name, status, notes, created_at, updated_at)
+                          VALUES (?, ?, ?, ?, ?, ?)""",
+                       (o["order_number"], o.get("client_name") or "", o.get("status") or "EN_ATTENTE",
+                        o.get("notes") or "", _ts(o.get("created_at")), _ts(o.get("updated_at"))))
+    stats["commandes"] = len(orders)
+
+    # Lignes de commande (uniquement si la base locale n'en a pas, pour éviter les doublons)
+    if _local_count(cursor, "order_items") == 0:
+        n = 0
+        for it in _get_all("order_items"):
+            o = cursor.execute("SELECT id FROM orders WHERE order_number = ?", (it["order_number"],)).fetchone()
+            vid = _variant_id(cursor, it["product_reference"], it["color"])
+            if not o or not vid:
+                continue
+            cursor.execute("""INSERT INTO order_items (order_id, order_number, variant_id, product_reference, product_name, color,
+                              quantity_reserved, quantity_destocked, unit_price, status) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                           (o[0], it["order_number"], vid, it["product_reference"], it.get("product_name") or "", it["color"],
+                            float(it.get("quantity_reserved") or 0), float(it.get("quantity_destocked") or 0),
+                            float(it.get("unit_price") or 0), it.get("status") or "RESERVED"))
+            n += 1
+        stats["lignes de commande"] = n
+
+    # Historique des prix
+    if _local_count(cursor, "price_history") == 0:
+        n = 0
+        for ph in _get_all("price_history"):
+            vid = _variant_id(cursor, ph["product_reference"], ph.get("color") or "")
+            if not vid:
+                r = cursor.execute("SELECT id FROM variants WHERE product_reference = ? ORDER BY id LIMIT 1", (ph["product_reference"],)).fetchone()
+                vid = r[0] if r else None
+            if not vid:
+                continue
+            cursor.execute("""INSERT INTO price_history (variant_id, product_reference, price, pmp_after, quantity, recorded_at)
+                              VALUES (?, ?, ?, ?, ?, ?)""",
+                           (vid, ph["product_reference"], float(ph.get("price") or 0), float(ph.get("pmp_after") or 0),
+                            float(ph.get("quantity") or 0), _ts(ph.get("recorded_at"))))
+            n += 1
+        stats["historique des prix"] = n
+
+    # Comptages d'inventaire
+    counts = _get_all("inventory_counts")
+    n = 0
+    for c in counts:
+        vid = _variant_id(cursor, c["product_reference"], c["color"])
+        if not vid:
+            continue
+        cursor.execute("""INSERT OR IGNORE INTO inventory_counts (variant_id, product_reference, color, person1_name, count1,
+                          person2_name, count2, expected_quantity, status, is_selected, inventory_date, notes, created_at, updated_at)
+                          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                       (vid, c["product_reference"], c["color"], c.get("person1_name") or "Personne 1", c.get("count1"),
+                        c.get("person2_name") or "Personne 2", c.get("count2"), float(c.get("expected_quantity") or 0),
+                        c.get("status") or "PENDING", int(c.get("is_selected") or 0), c.get("inventory_date"),
+                        c.get("notes"), c.get("created_at") or "", c.get("updated_at") or ""))
+        n += 1
+    stats["comptages d'inventaire"] = n
+
+    # Anomalies d'inventaire
+    if _local_count(cursor, "inventory_anomalies") == 0:
+        n = 0
+        for a in _get_all("inventory_anomalies"):
+            vid = _variant_id(cursor, a["product_reference"], a["color"])
+            if not vid:
+                continue
+            cursor.execute("""INSERT INTO inventory_anomalies (variant_id, product_reference, designation, color, real_quantity_before,
+                              counted_quantity, discrepancy_quantity, pmp_at_adjustment, financial_impact, person1_name, count1,
+                              person2_name, count2, reason, notes, adjusted_by, created_at)
+                              VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                           (vid, a["product_reference"], a["designation"], a["color"], float(a["real_quantity_before"] or 0),
+                            float(a["counted_quantity"] or 0), float(a["discrepancy_quantity"] or 0),
+                            float(a.get("pmp_at_adjustment") or 0), float(a.get("financial_impact") or 0),
+                            a.get("person1_name"), a.get("count1"), a.get("person2_name"), a.get("count2"),
+                            a["reason"], a.get("notes"), a.get("adjusted_by") or "Admin", a["created_at"]))
+            n += 1
+        stats["anomalies d'inventaire"] = n
+    return stats
+
+# =============================================================================
+# PHOTOS DES ARTICLES : Supabase Storage
+# =============================================================================
+
+PHOTO_BUCKET = "product-images"
+
+def upload_image_to_cloud(filename: str, content: bytes, content_type: str) -> Optional[str]:
+    """Envoie une photo dans Supabase Storage. Renvoie son URL publique, ou None en cas d'échec."""
+    url, key = get_supabase_credentials()
+    if not url or not key:
+        return None
+    req = urllib.request.Request(
+        f"{url}/storage/v1/object/{PHOTO_BUCKET}/{_q(filename)}", data=content, method="POST",
+        headers={"apikey": key, "Authorization": f"Bearer {key}",
+                 "Content-Type": content_type or "application/octet-stream", "x-upsert": "true"})
+    try:
+        with urllib.request.urlopen(req, timeout=30) as resp:
+            print(f"[SUPABASE SYNC OK] photo {filename} -> HTTP {resp.status}")
+        return f"{url}/storage/v1/object/public/{PHOTO_BUCKET}/{_q(filename)}"
+    except urllib.error.HTTPError as e:
+        print(f"[SUPABASE ERROR] upload photo HTTP {e.code}: {e.read().decode('utf-8', errors='ignore')}")
+    except Exception as e:
+        print(f"[SUPABASE ERROR] upload photo: {e}")
+    return None

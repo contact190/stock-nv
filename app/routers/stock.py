@@ -193,13 +193,20 @@ async def upload_product_image(file: UploadFile = File(...)):
     os.makedirs(upload_dir, exist_ok=True)
     file_path = os.path.join(upload_dir, unique_filename)
 
+    content = await file.read()
     with open(file_path, "wb") as buffer:
-        shutil.copyfileobj(file.file, buffer)
+        buffer.write(content)
+
+    # Photo envoyée dans Supabase Storage : elle survit aux redémarrages du serveur
+    from app.supabase_sync import upload_image_to_cloud
+    from starlette.concurrency import run_in_threadpool
+    cloud_url = await run_in_threadpool(upload_image_to_cloud, unique_filename, content, file.content_type or "")
 
     return {
         "status": "success",
-        "url": f"/static/uploads/{unique_filename}",
-        "filename": unique_filename
+        "url": cloud_url or f"/static/uploads/{unique_filename}",
+        "filename": unique_filename,
+        "cloud": bool(cloud_url)
     }
 
 @router.post("/update-image")
