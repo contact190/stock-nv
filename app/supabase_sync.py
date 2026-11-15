@@ -5,6 +5,7 @@ import urllib.request
 import urllib.parse
 import urllib.error
 import sqlite3
+import threading
 from typing import Optional, Dict, Any, List
 
 logger = logging.getLogger("supabase_sync")
@@ -191,54 +192,158 @@ def sync_variant_to_cloud(variant: dict, delete: bool = False):
                           data=[v_data],
                           headers_extra={"Prefer": "resolution=merge-duplicates"})
 
-def sync_movement_to_cloud(movement: dict):
-    if not is_supabase_enabled():
-        return
-    m_data = {
+def _movement_payload(movement: dict) -> dict:
+    return {
         "timestamp": movement.get("timestamp"),
         "action_type": movement.get("action_type"),
         "product_reference": movement.get("product_reference"),
-        "product_name": movement.get("product_name"),
-        "color": movement.get("color"),
+        "product_name": movement.get("product_name") or movement.get("product_reference") or "",
+        "color": movement.get("color") or "",
         "quantity": float(movement.get("quantity") or 0.0),
         "unit_price": float(movement.get("unit_price") or 0.0),
         "pmp_at_movement": float(movement.get("pmp_at_movement") or 0.0),
         "total_value": float(movement.get("total_value") or 0.0),
         "order_number": movement.get("order_number"),
-        "operator": movement.get("operator", "Atelier"),
-        "notes": movement.get("notes", "")
+        "operator": movement.get("operator") or "Atelier",
+        "is_anonyme": int(movement.get("is_anonyme") or 0),
+        "notes": movement.get("notes") or ""
     }
-    _supabase_request("movements", method="POST", data=[m_data])
+
+def sync_movement_to_cloud(movement: dict):
+    """Envoie un mouvement. Renvoie l'id Supabase en cas de succès, sinon None."""
+    if not is_supabase_enabled():
+        return None
+    res = _supabase_request("movements", method="POST", data=[_movement_payload(movement)],
+                            headers_extra={"Prefer": "return=representation"})
+    if isinstance(res, list) and res:
+        return res[0].get("id")
+    return None
+
+# Verrou : évite que deux requêtes simultanées envoient deux fois le même mouvement
+_push_lock = threading.Lock()
+
+def push_pending_to_cloud() -> Dict[str, int]:
+    """
+    Envoie vers Supabase tout ce qui n'y est pas encore :
+    - les mouvements marqués cloud_synced = 0
+    - les variantes marquées cloud_dirty = 1 (quantités, prix, emplacements modifiés)
+    Un envoi raté reste en file d'attente et sera retenté à la prochaine action
+    ou au prochain démarrage du serveur : plus aucune saisie n'est perdue en silence.
+    """
+    result = {"movements_sent": 0, "variants_sent": 0, "movements_pending": 0, "variants_pending": 0}
+    if not is_supabase_enabled():
+        return result
+
+    from app.database import get_db
+    with _push_lock:
+        conn = get_db()
+        cursor = conn.cursor()
+        try:
+            # 1. Variantes d'abord (le stock à jour est le plus important)
+            cursor.execute("SELECT * FROM variants WHERE cloud_dirty = 1")
+            for row in cursor.fetchall():
+                v = dict(row)
+                ok = _upsert_variant(v)
+                if ok:
+                    # Ne remet à 0 que si la variante n'a pas bougé entre-temps
+                    cursor.execute("UPDATE variants SET cloud_dirty = 0 WHERE id = ? AND updated_at IS ? AND real_quantity IS ? AND reserved_quantity IS ?",
+                                   (v["id"], v["updated_at"], v["real_quantity"], v["reserved_quantity"]))
+                    conn.commit()
+                    result["variants_sent"] += 1
+
+            # 2. Mouvements dans l'ordre chronologique
+            cursor.execute("SELECT * FROM movements WHERE cloud_synced = 0 ORDER BY id ASC")
+            for row in cursor.fetchall():
+                m = dict(row)
+                cloud_id = sync_movement_to_cloud(m)
+                if cloud_id is None:
+                    # Supabase injoignable ou refus : on arrête et on retentera plus tard
+                    break
+                cursor.execute("UPDATE movements SET cloud_synced = 1, cloud_id = ? WHERE id = ?", (cloud_id, m["id"]))
+                conn.commit()
+                result["movements_sent"] += 1
+
+            cursor.execute("SELECT COUNT(*) FROM movements WHERE cloud_synced = 0")
+            result["movements_pending"] = cursor.fetchone()[0]
+            cursor.execute("SELECT COUNT(*) FROM variants WHERE cloud_dirty = 1")
+            result["variants_pending"] = cursor.fetchone()[0]
+        except Exception as e:
+            logger.error(f"Error pushing pending data to Supabase: {e}")
+            print(f"[SUPABASE ERROR] push_pending_to_cloud: {e}")
+        finally:
+            conn.close()
+
+    if result["movements_sent"] or result["variants_sent"]:
+        print(f"[SUPABASE SYNC] {result['movements_sent']} mouvement(s), {result['variants_sent']} variante(s) envoyés")
+    if result["movements_pending"] or result["variants_pending"]:
+        print(f"[SUPABASE SYNC] EN ATTENTE : {result['movements_pending']} mouvement(s), {result['variants_pending']} variante(s)")
+    return result
+
+def _upsert_variant(variant: dict) -> bool:
+    ref = variant.get("product_reference")
+    color = variant.get("color")
+    if not ref or not color:
+        return True  # rien d'envoyable, on ne bloque pas la file
+    v_data = {
+        "product_reference": ref,
+        "color": color,
+        "ral_code": variant.get("ral_code") or "",
+        "color_hex": variant.get("color_hex") or "#64748b",
+        "barcode": variant.get("barcode") or f"BAR-{ref}-{color}",
+        "initial_quantity": float(variant.get("initial_quantity") or 0.0),
+        "real_quantity": float(variant.get("real_quantity") or 0.0),
+        "reserved_quantity": float(variant.get("reserved_quantity") or 0.0),
+        "threshold": float(variant.get("threshold") or 10.0),
+        "current_price": float(variant.get("current_price") or 0.0),
+        "previous_price": float(variant.get("previous_price") or 0.0),
+        "pmp": float(variant.get("pmp") or 0.0),
+        "supplier": variant.get("supplier") or "",
+        "location": variant.get("location") or "EN_ATTENTE_AFFECTATION"
+    }
+    res = _supabase_request("variants?on_conflict=product_reference,color", method="POST",
+                            data=[v_data],
+                            headers_extra={"Prefer": "resolution=merge-duplicates"})
+    return res is not None
 
 def sync_variant_by_id(variant_id: int):
-    if not is_supabase_enabled():
-        return
-    try:
-        from app.database import get_db
-        conn = get_db()
-        cursor = conn.cursor()
-        cursor.execute("SELECT * FROM variants WHERE id = ?", (variant_id,))
-        row = cursor.fetchone()
-        conn.close()
-        if row:
-            sync_variant_to_cloud(dict(row))
-    except Exception as e:
-        logger.error(f"Error syncing variant {variant_id}: {e}")
+    # Conservé pour compatibilité : la variante est déjà marquée "à envoyer" par la base
+    push_pending_to_cloud()
 
 def sync_latest_movement():
-    if not is_supabase_enabled():
-        return
-    try:
-        from app.database import get_db
-        conn = get_db()
-        cursor = conn.cursor()
-        cursor.execute("SELECT * FROM movements ORDER BY id DESC LIMIT 1")
-        row = cursor.fetchone()
-        conn.close()
-        if row:
-            sync_movement_to_cloud(dict(row))
-    except Exception as e:
-        logger.error(f"Error syncing latest movement: {e}")
+    # Conservé pour compatibilité : envoie TOUS les mouvements en attente (pas seulement le dernier)
+    push_pending_to_cloud()
+
+def _normalize_ts(ts: Optional[str]) -> str:
+    if not ts:
+        return ""
+    return str(ts).replace("T", " ")[:19]
+
+def pull_movements_from_supabase(cursor) -> int:
+    """Recharge l'historique complet des mouvements depuis Supabase (par pages de 1000)."""
+    total = 0
+    offset = 0
+    page = 1000
+    while True:
+        rows = _supabase_request(f"movements?select=*&order=id.asc&limit={page}&offset={offset}")
+        if not isinstance(rows, list) or not rows:
+            break
+        for m in rows:
+            cursor.execute("""
+                INSERT OR IGNORE INTO movements (timestamp, action_type, product_reference, product_name, color,
+                    quantity, unit_price, pmp_at_movement, total_value, order_number, operator, is_anonyme, notes,
+                    cloud_synced, cloud_id)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?)
+            """, (_normalize_ts(m.get("timestamp")), m.get("action_type"), m.get("product_reference"),
+                  m.get("product_name") or "", m.get("color") or "",
+                  float(m.get("quantity") or 0), float(m.get("unit_price") or 0),
+                  float(m.get("pmp_at_movement") or 0), float(m.get("total_value") or 0),
+                  m.get("order_number"), m.get("operator") or "Atelier", int(m.get("is_anonyme") or 0),
+                  m.get("notes") or "", m.get("id")))
+            total += cursor.rowcount if cursor.rowcount > 0 else 0
+        if len(rows) < page:
+            break
+        offset += page
+    return total
 
 # --- CHARGEMENT AU DÉMARRAGE : SUPABASE -> SQLITE ---
 
@@ -250,6 +355,9 @@ def pull_all_from_supabase_to_sqlite():
     if not is_supabase_enabled():
         logger.info("Supabase credentials not configured. Skipping cloud sync.")
         return
+
+    # D'abord envoyer ce qui serait resté en attente localement (ne rien écraser)
+    push_pending_to_cloud()
 
     from app.database import get_db
     conn = get_db()
@@ -345,6 +453,18 @@ def pull_all_from_supabase_to_sqlite():
                       v.get("updated_at", "")))
             conn.commit()
             logger.info(f"Pulled {len(cloud_vars)} variants from Supabase.")
+
+        # Les variantes qui viennent d'être rechargées depuis le Cloud sont à jour
+        if isinstance(cloud_vars, list):
+            for v in cloud_vars:
+                cursor.execute("UPDATE variants SET cloud_dirty = 0 WHERE product_reference = ? AND color = ?",
+                               (v["product_reference"], v["color"]))
+            conn.commit()
+
+        # 7. Historique des mouvements (avant : jamais rechargé -> perdu à chaque redémarrage)
+        n_mvts = pull_movements_from_supabase(cursor)
+        conn.commit()
+        print(f"[SUPABASE SYNC] {n_mvts} mouvement(s) rechargé(s) depuis Supabase au démarrage")
 
     except Exception as e:
         logger.error(f"Error during Supabase startup pull: {e}")

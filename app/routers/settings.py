@@ -34,7 +34,18 @@ def get_cloud_status():
     else:
         details = "Variables d'environnement SUPABASE_URL ou SUPABASE_KEY manquantes sur le serveur"
 
+    pending = {"movements_pending": 0, "variants_pending": 0}
+    try:
+        from app.database import get_db
+        c = get_db()
+        pending["movements_pending"] = c.execute("SELECT COUNT(*) FROM movements WHERE cloud_synced = 0").fetchone()[0]
+        pending["variants_pending"] = c.execute("SELECT COUNT(*) FROM variants WHERE cloud_dirty = 1").fetchone()[0]
+        c.close()
+    except Exception:
+        pass
+
     return {
+        **pending,
         "cloud_enabled": has_url and has_key,
         "connected": conn_ok,
         "supabase_url": url[:18] + "..." if url else None,

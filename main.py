@@ -6,7 +6,8 @@ from fastapi.middleware.cors import CORSMiddleware
 from contextlib import asynccontextmanager
 
 from app.database import init_db
-from app.supabase_sync import pull_all_from_supabase_to_sqlite
+from starlette.concurrency import run_in_threadpool
+from app.supabase_sync import pull_all_from_supabase_to_sqlite, push_pending_to_cloud
 from app.routers import dashboard, stock, actions, movements, orders, settings, inventory
 
 @asynccontextmanager
@@ -38,6 +39,13 @@ app.add_middleware(
 @app.middleware("http")
 async def add_no_cache_headers(request: Request, call_next):
     response = await call_next(request)
+    # Après toute modification (déstockage, stockage, réservation, inventaire, commande...),
+    # on envoie immédiatement à Supabase tout ce qui est en attente, avant de répondre.
+    if request.method in ("POST", "PUT", "PATCH", "DELETE") and request.url.path.startswith("/api/"):
+        try:
+            await run_in_threadpool(push_pending_to_cloud)
+        except Exception as e:
+            print(f"[SUPABASE ERROR] push after {request.url.path}: {e}")
     if request.url.path.startswith("/static/") or request.url.path == "/":
         response.headers["Cache-Control"] = "no-cache, no-store, must-revalidate"
         response.headers["Pragma"] = "no-cache"

@@ -251,6 +251,44 @@ def init_db():
     if "is_anonyme" not in mvt_cols:
         cursor.execute("ALTER TABLE movements ADD COLUMN is_anonyme INTEGER DEFAULT 0")
 
+    # Colonnes lues par la page Historique (évite un plantage sur une base neuve)
+    if "poseur" not in mvt_cols:
+        cursor.execute("ALTER TABLE movements ADD COLUMN poseur TEXT")
+    if "user" not in mvt_cols:
+        cursor.execute("ALTER TABLE movements ADD COLUMN user TEXT")
+
+    # Synchronisation Cloud fiable : file d'attente des mouvements et variantes à envoyer
+    if "cloud_synced" not in mvt_cols:
+        cursor.execute("ALTER TABLE movements ADD COLUMN cloud_synced INTEGER DEFAULT 0")
+        # Les mouvements déjà présents avant cette mise à jour ne sont pas renvoyés
+        cursor.execute("UPDATE movements SET cloud_synced = 1")
+    if "cloud_id" not in mvt_cols:
+        cursor.execute("ALTER TABLE movements ADD COLUMN cloud_id INTEGER")
+    cursor.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_mvt_cloud_id ON movements(cloud_id)")
+
+    cursor.execute("PRAGMA table_info(variants)")
+    variant_cols = [c["name"] for c in cursor.fetchall()]
+    if "cloud_dirty" not in variant_cols:
+        cursor.execute("ALTER TABLE variants ADD COLUMN cloud_dirty INTEGER DEFAULT 0")
+
+    # Toute modification de quantité / prix / emplacement marque la variante "à envoyer"
+    cursor.execute("""
+        CREATE TRIGGER IF NOT EXISTS trg_variants_dirty_upd
+        AFTER UPDATE OF real_quantity, reserved_quantity, initial_quantity, threshold,
+                        current_price, previous_price, pmp, location, supplier, ral_code, color_hex, barcode
+        ON variants
+        BEGIN
+            UPDATE variants SET cloud_dirty = 1 WHERE id = NEW.id;
+        END
+    """)
+    cursor.execute("""
+        CREATE TRIGGER IF NOT EXISTS trg_variants_dirty_ins
+        AFTER INSERT ON variants
+        BEGIN
+            UPDATE variants SET cloud_dirty = 1 WHERE id = NEW.id;
+        END
+    """)
+
     # Peuplement Nuancier / Couleurs si vide : uniquement 7024 et Noir 7016
     cursor.execute("SELECT COUNT(*) as cnt FROM colors")
     if cursor.fetchone()["cnt"] == 0:
