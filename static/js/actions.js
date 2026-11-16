@@ -657,7 +657,7 @@ function addDestockItemToList() {
   const newTotal = currentInList + qty;
 
   // Contrôle local de sécurité stock négatif
-  if (v.real_quantity < newTotal) {
+  if (parseFloat(v.real_quantity || 0) < newTotal) {
     showToast(`⛔ Stock insuffisant : Quantité en atelier (${v.real_quantity}) inférieure au total demandé (${newTotal}).`, 'error');
     return;
   }
@@ -757,7 +757,7 @@ function renderDestockItemsList() {
   }
 
   listEl.innerHTML = AppState.destockBatchItems.map((item, idx) => `
-    <div class="p-2.5 rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900/90 flex items-center justify-between gap-3 shadow-sm hover:border-rose-300 dark:hover:border-rose-900 transition-colors">
+    <div class="p-2.5 rounded-xl border ${parseFloat(item.real_quantity) < item.quantity ? 'border-rose-500 bg-rose-50 dark:bg-rose-950/60 ring-2 ring-rose-400' : 'border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900/90'} flex items-center justify-between gap-3 shadow-sm hover:border-rose-300 dark:hover:border-rose-900 transition-colors">
       <div class="flex items-center gap-2.5 min-w-0">
         <span class="color-bubble" style="background-color: ${item.color_hex};"></span>
         <div class="min-w-0">
@@ -766,6 +766,7 @@ function renderDestockItemsList() {
           </div>
           <div class="text-[11px] text-slate-500 dark:text-slate-400 truncate">${item.designation}</div>
           <div class="text-[10px] text-slate-400">Stock atelier: <b>${item.real_quantity}</b> ${item.unit}</div>
+          ${parseFloat(item.real_quantity) < item.quantity ? `<div class="text-[10px] font-bold text-rose-600">⛔ Stock insuffisant : il manque ${item.quantity - parseFloat(item.real_quantity)} ${item.unit}</div>` : ''}
         </div>
       </div>
 
@@ -852,6 +853,15 @@ async function handleDestockSubmit(e) {
 
   } catch (err) {
     showToast(`⛔ ${err.message}`, 'error');
+    // La liste est conservée : on rafraîchit les stocks et on surligne en rouge les articles en défaut
+    try {
+      await loadReferencesForSelects();
+      AppState.destockBatchItems.forEach(it => {
+        const fresh = AppState.allVariants.find(v => v.id === it.variant_id);
+        if (fresh) it.real_quantity = fresh.real_quantity;
+      });
+      renderDestockItemsList();
+    } catch (_) {}
   }
 }
 

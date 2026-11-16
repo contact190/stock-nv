@@ -284,11 +284,12 @@ def batch_destock_operation(data: BatchDestockRequest) -> Dict[str, Any]:
             raise ValueError("Chaque quantité à déstocker doit être strictement supérieure à 0.")
         requested_by_variant[item.variant_id] = requested_by_variant.get(item.variant_id, 0.0) + item.quantity
 
+    shortages = []
     for v_id, total_qty in requested_by_variant.items():
         cursor.execute("""
-            SELECT v.*, p.designation 
-            FROM variants v 
-            JOIN products p ON v.product_reference = p.reference 
+            SELECT v.*, p.designation
+            FROM variants v
+            JOIN products p ON v.product_reference = p.reference
             WHERE v.id = ?
         """, (v_id,))
         variant = cursor.fetchone()
@@ -298,11 +299,18 @@ def batch_destock_operation(data: BatchDestockRequest) -> Dict[str, Any]:
 
         real_qty = float(variant["real_quantity"] or 0)
         if real_qty < total_qty:
-            conn.close()
-            raise ValueError(
-                f"Déstockage refusé (Stock Négatif) pour '{variant['product_reference']} - {variant['color']}' : "
-                f"Disponible en atelier : {real_qty}, Quantité totale demandée : {total_qty}."
+            shortages.append(
+                f"{variant['product_reference']} - {variant['color']} (en stock : {real_qty:g}, demandé : {total_qty:g})"
             )
+
+    # Rien n'est enregistré si un seul article manque : on liste TOUS les articles en défaut d'un coup
+    if shortages:
+        conn.close()
+        raise ValueError(
+            "Déstockage refusé, rien n'a été enregistré. Stock insuffisant pour : "
+            + " ; ".join(shortages)
+            + ". Corrigez ou retirez ces articles (ou stockez d'abord la quantité manquante), puis validez à nouveau."
+        )
 
     # 2. Gestion de l'affectation à une Commande / Lot
     raw_order = data.order_number or data.chantier
