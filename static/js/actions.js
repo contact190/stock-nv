@@ -809,7 +809,7 @@ async function handleDestockSubmit(e) {
   const notes = document.getElementById('destockNotes').value.trim();
 
   const payload = {
-    items: AppState.destockBatchItems.map(it => ({ variant_id: it.variant_id, quantity: it.quantity })),
+    items: AppState.destockBatchItems.map(it => ({ variant_id: it.variant_id, reference: it.product_reference, color: it.color, quantity: it.quantity })),
     order_number: (orderVal && orderVal !== 'NONE') ? orderVal : null,
     lot_number: (orderVal && orderVal !== 'NONE') ? (lotNumber || null) : null,
     unassigned_reason: (orderVal === 'NONE') ? (unassignedReason || 'Chutes atelier libre') : null,
@@ -1092,7 +1092,7 @@ async function handleReserveSubmit(e) {
   }
 
   const payload = {
-    items: AppState.reserveBatchItems.map(it => ({ variant_id: it.variant_id, quantity: it.quantity })),
+    items: AppState.reserveBatchItems.map(it => ({ variant_id: it.variant_id, reference: it.product_reference, color: it.color, quantity: it.quantity })),
     order_number: orderNumber,
     lot_number: lotNumber || null,
     client_name: `Commande ${orderNumber}`,

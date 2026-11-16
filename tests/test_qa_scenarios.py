@@ -515,7 +515,7 @@ class TestQANegativeAndBusinessRules(unittest.TestCase):
                 ],
                 order_number="BATCH-FAIL"
             ))
-        self.assertIn("Stock Négatif", str(ctx.exception))
+        self.assertIn("Stock insuffisant", str(ctx.exception))
 
         # 3. Test Réservation Batch
         batch_r = BatchReserveRequest(

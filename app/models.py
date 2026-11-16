@@ -61,6 +61,8 @@ class StockInRequest(BaseModel):
 class DestockRequest(BaseModel):
     """Sortie de stock physique avec sélection de commande et saisie manuelle du lot."""
     variant_id: int
+    reference: Optional[str] = None
+    color: Optional[str] = None
     quantity: float = Field(gt=0, description="Quantité à déstocker")
     order_number: Optional[str] = None
     lot_number: Optional[str] = None
@@ -75,6 +77,9 @@ class DestockRequest(BaseModel):
 
 class BatchItem(BaseModel):
     variant_id: int
+    # Référence + couleur : identifient l'article de façon sûre même si les numéros internes ont changé
+    reference: Optional[str] = None
+    color: Optional[str] = None
     quantity: float = Field(gt=0, description="Quantité pour cette variante")
 
 class BatchDestockRequest(BaseModel):
@@ -92,6 +97,8 @@ class BatchDestockRequest(BaseModel):
 class ReserveRequest(BaseModel):
     """Réservation pour commande avec saisie manuelle du lot."""
     variant_id: int
+    reference: Optional[str] = None
+    color: Optional[str] = None
     order_number: str
     lot_number: Optional[str] = None
     quantity: float = Field(gt=0, description="Quantité à réserver")

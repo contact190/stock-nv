@@ -77,6 +77,25 @@ def create_catalog_product(data: CatalogProductCreate) -> Dict[str, Any]:
         "pmp": pmp_val
     }
 
+
+def _resolve_variant_id(cursor, variant_id, reference=None, color=None):
+    """
+    Identifie l'article de façon sûre.
+    Les numéros internes (id) des variantes peuvent changer quand le serveur redémarre
+    (base rechargée depuis Supabase). La référence + couleur, elles, ne changent jamais :
+    si elles sont fournies, elles font foi.
+    """
+    if reference and str(reference).strip() and color and str(color).strip():
+        cursor.execute(
+            "SELECT id FROM variants WHERE UPPER(product_reference) = ? AND UPPER(color) = ?",
+            (str(reference).strip().upper(), str(color).strip().upper())
+        )
+        row = cursor.fetchone()
+        if not row:
+            raise ValueError(f"Article '{reference} - {color}' introuvable au catalogue. Rechargez la page (F5) et réessayez.")
+        return row["id"]
+    return variant_id
+
 def stock_in_operation(data: StockInRequest) -> Dict[str, Any]:
     """
     Entrée en stock d'un produit existant au Catalogue.
@@ -97,7 +116,24 @@ def stock_in_operation(data: StockInRequest) -> Dict[str, Any]:
         raise ValueError("Prix d'achat non renseigné ou à 0 DZD. Une confirmation explicite est obligatoire.")
 
     # 2. Vérification que la variante existe dans le catalogue maître
-    if data.variant_id:
+    # (référence + couleur prioritaires : l'id envoyé par le navigateur peut être périmé)
+    if data.reference and data.color:
+        cursor.execute("""
+            SELECT v.*, p.designation, p.unit 
+            FROM variants v 
+            JOIN products p ON v.product_reference = p.reference 
+            WHERE UPPER(v.product_reference) = ? AND UPPER(v.color) = ?
+        """, (data.reference.strip().upper(), data.color.strip().upper()))
+        found = cursor.fetchone()
+        if not found:
+            data.variant_id = None  # couleur pas encore créée pour cette référence : création plus bas
+        cursor.execute("""
+            SELECT v.*, p.designation, p.unit 
+            FROM variants v 
+            JOIN products p ON v.product_reference = p.reference 
+            WHERE v.id = ?
+        """, (found["id"] if found else -1,))
+    elif data.variant_id:
         cursor.execute("""
             SELECT v.*, p.designation, p.unit 
             FROM variants v 
@@ -207,6 +243,12 @@ def destock_operation(data: DestockRequest) -> Dict[str, Any]:
     cursor = conn.cursor()
     now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
+    try:
+        data.variant_id = _resolve_variant_id(cursor, data.variant_id, data.reference, data.color)
+    except ValueError:
+        conn.close()
+        raise
+
     cursor.execute("""
         SELECT v.*, p.designation, p.unit 
         FROM variants v 
@@ -275,6 +317,13 @@ def batch_destock_operation(data: BatchDestockRequest) -> Dict[str, Any]:
     conn = get_db()
     cursor = conn.cursor()
     now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+
+    try:
+        for _it in data.items:
+            _it.variant_id = _resolve_variant_id(cursor, _it.variant_id, _it.reference, _it.color)
+    except ValueError:
+        conn.close()
+        raise
 
     # 1. Vérification préalable des stocks cumulés demandés
     requested_by_variant = {}
@@ -377,6 +426,12 @@ def reserve_operation(data: ReserveRequest) -> Dict[str, Any]:
     cursor = conn.cursor()
     now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
+    try:
+        data.variant_id = _resolve_variant_id(cursor, data.variant_id, data.reference, data.color)
+    except ValueError:
+        conn.close()
+        raise
+
     cursor.execute("""
         SELECT v.*, p.designation 
         FROM variants v 
@@ -463,6 +518,13 @@ def batch_reserve_operation(data: BatchReserveRequest) -> Dict[str, Any]:
     conn = get_db()
     cursor = conn.cursor()
     now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+
+    try:
+        for _it in data.items:
+            _it.variant_id = _resolve_variant_id(cursor, _it.variant_id, _it.reference, _it.color)
+    except ValueError:
+        conn.close()
+        raise
 
     # 1. Vérification préalable des disponibilités
     requested_by_variant = {}

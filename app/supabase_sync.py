@@ -482,6 +482,29 @@ def pull_all_from_supabase_to_sqlite():
         conn.commit()
         print(f"[SUPABASE SYNC] Rechargé depuis Supabase : {extra}")
 
+        # 9. Les numéros internes des articles changent à chaque redémarrage :
+        #    on recolle les réservations / historiques sur le bon article grâce à référence + couleur
+        for tbl in ("order_items", "price_history"):
+            try:
+                cols = [r[1] for r in cursor.execute(f"PRAGMA table_info({tbl})").fetchall()]
+                if "color" not in cols:
+                    continue
+                cursor.execute(f"""
+                    UPDATE {tbl} SET variant_id = (
+                        SELECT v.id FROM variants v
+                        WHERE UPPER(v.product_reference) = UPPER({tbl}.product_reference)
+                          AND UPPER(v.color) = UPPER({tbl}.color)
+                    )
+                    WHERE EXISTS (
+                        SELECT 1 FROM variants v
+                        WHERE UPPER(v.product_reference) = UPPER({tbl}.product_reference)
+                          AND UPPER(v.color) = UPPER({tbl}.color)
+                    )
+                """)
+            except Exception as e:
+                print(f"[SUPABASE SYNC] réalignement {tbl} ignoré : {e}")
+        conn.commit()
+
     except Exception as e:
         logger.error(f"Error during Supabase startup pull: {e}")
         print(f"[SUPABASE ERROR] startup pull: {e}")
