@@ -264,10 +264,15 @@ function quickAction(actionType, variantId, reference, color) {
   switchTab('actions');
   if (actionType === 'stock') {
     selectActionSubTab('stocker');
-    const inSelect = document.getElementById('stockInVariantSelect');
-    if (inSelect) {
-      inSelect.value = variantId;
-      onStockInVariantSelectChange();
+    const refInput = document.getElementById('stockInSearchRef');
+    if (refInput) {
+      refInput.value = reference;
+      onStockInSearchRef(reference);
+      const inSelect = document.getElementById('stockInColorSelect');
+      if (inSelect) {
+        inSelect.value = String(variantId);
+        onStockInColorChange();
+      }
     }
   } else if (actionType === 'destock') {
     selectActionSubTab('destocker');

@@ -323,24 +323,49 @@ function onStockInSearchRef(query) {
     const variants = AppState.allVariants.filter(v => v.product_reference.toUpperCase() === matchedProduct.reference.toUpperCase());
 
     if (colorSelect) {
-      if (variants.length > 0) {
-        colorSelect.innerHTML = variants.map(v => 
-          `<option value="${v.id}" data-color="${v.color}" data-supplier="${v.supplier || ''}" data-stock="${v.real_quantity}" data-pmp="${v.pmp}">
-            ${v.color} ${v.ral_code ? ' (' + v.ral_code + ')' : ''} — Stock: ${v.real_quantity} | PMP: ${formatMoney(v.pmp)}
-          </option>`
-        ).join('');
+      const esc = s => String(s || '').replace(/"/g, '&quot;');
+      const previous = colorSelect.value;
 
-        // Pré-remplir le fournisseur
-        const firstVariant = variants[0];
-        const supplierInput = document.getElementById('stockInSupplier');
-        if (supplierInput && (firstVariant.supplier || matchedProduct.supplier)) {
-          supplierInput.value = firstVariant.supplier || matchedProduct.supplier || '';
-        }
-      } else {
-        colorSelect.innerHTML = '<option value="">Aucune variante trouvée</option>';
+      // 1) Couleurs déjà en stock pour cette référence
+      const existingOpts = variants.map(v =>
+        `<option value="${v.id}" data-color="${esc(v.color)}" data-hex="${esc(v.color_hex || '#64748b')}" data-supplier="${esc(v.supplier)}" data-stock="${v.real_quantity}" data-pmp="${v.pmp}">
+          ${v.color} ${v.ral_code ? ' (' + v.ral_code + ')' : ''} — Stock: ${v.real_quantity} | PMP: ${formatMoney(v.pmp)}
+        </option>`
+      ).join('');
+
+      // 2) Couleurs du nuancier pas encore créées pour cette référence (nouveau profilé)
+      const usedColors = new Set(variants.map(v => v.color.trim().toUpperCase()));
+      const newColors = (AppState.colors || []).filter(c => c.name && !usedColors.has(c.name.trim().toUpperCase()));
+      const newOpts = newColors.map(c =>
+        `<option value="new:${esc(c.name)}" data-color="${esc(c.name)}" data-ral="${esc(c.ral_code)}" data-hex="${esc(c.hex_code || '#64748b')}" data-stock="0" data-pmp="0">
+          ➕ ${c.name}${c.ral_code && c.ral_code !== c.name ? ' (' + c.ral_code + ')' : ''} — nouvelle couleur (stock 0)
+        </option>`
+      ).join('');
+
+      let html = '<option value="">-- Choisir la couleur du profilé --</option>';
+      if (existingOpts) html += `<optgroup label="Couleurs déjà en stock">${existingOpts}</optgroup>`;
+      if (newOpts) html += `<optgroup label="Autres couleurs du nuancier">${newOpts}</optgroup>`;
+      if (!existingOpts && !newOpts) {
+        html = '<option value="">Aucune couleur : ajoutez-en dans Paramètres > Nuancier</option>';
+      }
+      colorSelect.innerHTML = html;
+
+      // Garder la sélection si possible, sinon présélectionner s'il n'y a qu'une seule couleur en stock
+      if (previous && [...colorSelect.options].some(o => o.value === previous)) {
+        colorSelect.value = previous;
+      } else if (variants.length === 1) {
+        colorSelect.value = String(variants[0].id);
+      }
+
+      // Pré-remplir le fournisseur
+      const supplierInput = document.getElementById('stockInSupplier');
+      const firstVariant = variants[0];
+      if (supplierInput && !supplierInput.value && ((firstVariant && firstVariant.supplier) || matchedProduct.supplier)) {
+        supplierInput.value = (firstVariant && firstVariant.supplier) || matchedProduct.supplier || '';
       }
     }
 
+    updateStockInColorBubble();
     updateStockInPmpPreview();
 
   } else {
@@ -373,7 +398,38 @@ function onStockInColorChange() {
       if (supplierInput) supplierInput.value = supp;
     }
   }
+  updateStockInColorBubble();
   updateStockInPmpPreview();
+}
+
+// Pastille de couleur à côté de la liste (comme dans Déstocker)
+function updateStockInColorBubble() {
+  const colorSelect = document.getElementById('stockInColorSelect');
+  const bubble = document.getElementById('stockInColorBubble');
+  const hint = document.getElementById('stockInNewColorHint');
+  if (!colorSelect) return;
+  const opt = colorSelect.options[colorSelect.selectedIndex];
+  const hex = opt ? opt.getAttribute('data-hex') : null;
+  if (bubble) bubble.style.backgroundColor = hex || 'transparent';
+  if (hint) hint.classList.toggle('hidden', !(colorSelect.value || '').startsWith('new:'));
+}
+
+// Retourne la sélection couleur : variante existante ou nouvelle couleur du nuancier
+function getStockInSelection() {
+  const colorSelect = document.getElementById('stockInColorSelect');
+  const val = colorSelect?.value || '';
+  if (!val) return null;
+  const opt = colorSelect.options[colorSelect.selectedIndex];
+  if (val.startsWith('new:')) {
+    return {
+      isNew: true,
+      color: opt.getAttribute('data-color'),
+      ral_code: opt.getAttribute('data-ral') || '',
+      color_hex: opt.getAttribute('data-hex') || '#64748b'
+    };
+  }
+  const v = AppState.allVariants.find(item => item.id === parseInt(val));
+  return v ? { isNew: false, variant: v } : null;
 }
 
 function resetStockInPmpPreview() {
@@ -384,18 +440,14 @@ function resetStockInPmpPreview() {
 }
 
 function updateStockInPmpPreview() {
-  const colorSelect = document.getElementById('stockInColorSelect');
-  const variantId = parseInt(colorSelect?.value);
-  if (!variantId) {
+  const sel = getStockInSelection();
+  if (!sel) {
     resetStockInPmpPreview();
     return;
   }
 
-  const v = AppState.allVariants.find(item => item.id === variantId);
-  if (!v) {
-    resetStockInPmpPreview();
-    return;
-  }
+  // Nouvelle couleur : stock et PMP partent de zéro
+  const v = sel.isNew ? { real_quantity: 0, pmp: 0, current_price: 0 } : sel.variant;
 
   const currentStock = parseFloat(v.real_quantity) || 0;
   const currentPmp = parseFloat(v.pmp) || parseFloat(v.current_price) || 0;
@@ -419,18 +471,17 @@ function updateStockInPmpPreview() {
 async function handleStockInSubmit(e) {
   e.preventDefault();
 
-  const colorSelect = document.getElementById('stockInColorSelect');
-  const variantId = parseInt(colorSelect?.value);
   const searchRef = document.getElementById('stockInSearchRef').value.trim().toUpperCase();
+  const matchedProduct = AppState.allReferences.find(p => p.reference.toUpperCase() === searchRef);
 
-  if (!variantId || !searchRef) {
+  if (!searchRef || !matchedProduct) {
     showToast("⛔ Impossible de stocker : Article inexistant dans le catalogue. Veuillez d'abord le créer.", "error");
     return;
   }
 
-  const v = AppState.allVariants.find(item => item.id === variantId);
-  if (!v) {
-    showToast("Article introuvable au catalogue maître.", "error");
+  const sel = getStockInSelection();
+  if (!sel) {
+    showToast("Veuillez choisir la couleur du profilé.", "warning");
     return;
   }
 
@@ -455,10 +506,22 @@ async function handleStockInSubmit(e) {
   }
 
   // Pas d'opérateur lors du stockage selon les spécifications strictes
-  const payload = {
-    variant_id: v.id,
-    reference: v.product_reference,
-    color: v.color,
+  const payload = sel.isNew ? {
+    variant_id: null,
+    reference: matchedProduct.reference,
+    color: sel.color,
+    ral_code: sel.ral_code,
+    color_hex: sel.color_hex,
+    quantity: qty,
+    unit_price: isNaN(price) ? 0 : price,
+    supplier: supplier,
+    allow_zero_price: allowZero,
+    notes: notes,
+    user: 'Admin'
+  } : {
+    variant_id: sel.variant.id,
+    reference: sel.variant.product_reference,
+    color: sel.variant.color,
     quantity: qty,
     unit_price: isNaN(price) ? 0 : price,
     supplier: supplier,
@@ -486,6 +549,11 @@ async function handleStockInSubmit(e) {
 
     await loadReferencesForSelects();
     onStockInSearchRef(searchRef);
+    const colorSelectAfter = document.getElementById('stockInColorSelect');
+    if (colorSelectAfter && result.variant_id) {
+      colorSelectAfter.value = String(result.variant_id);
+      onStockInColorChange();
+    }
     refreshDashboard();
 
   } catch (err) {

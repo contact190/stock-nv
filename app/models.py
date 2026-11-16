@@ -51,6 +51,8 @@ class StockInRequest(BaseModel):
     allow_zero_price: Optional[bool] = False
     notes: Optional[str] = None
     variant_id: Optional[int] = None
+    ral_code: Optional[str] = None
+    color_hex: Optional[str] = None
     threshold: Optional[float] = None
     location: Optional[str] = None
     poseur: Optional[str] = None

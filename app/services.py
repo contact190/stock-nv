@@ -113,6 +113,31 @@ def stock_in_operation(data: StockInRequest) -> Dict[str, Any]:
         """, (data.reference.strip().upper(), data.color.strip().upper()))
 
     variant = cursor.fetchone()
+
+    # 2b. Nouvelle couleur pour une référence existante : création automatique de la variante
+    # (un profilé dans une autre couleur est un article physiquement différent)
+    if not variant and not data.variant_id and data.color and data.color.strip():
+        clean_ref = data.reference.strip().upper()
+        clean_color = data.color.strip()
+        cursor.execute("SELECT * FROM products WHERE UPPER(reference) = ?", (clean_ref,))
+        prod = cursor.fetchone()
+        if prod:
+            barcode = f"BAR-{prod['reference']}-{clean_color[:3].upper()}"
+            cursor.execute("""
+                INSERT INTO variants (product_reference, color, ral_code, color_hex, barcode, initial_quantity, real_quantity, reserved_quantity,
+                                      threshold, current_price, previous_price, pmp, supplier, location, updated_at)
+                VALUES (?, ?, ?, ?, ?, 0, 0, 0, ?, 0, 0, 0, ?, ?, ?)
+            """, (prod["reference"], clean_color, data.ral_code or "", data.color_hex or "#64748b", barcode,
+                  prod["threshold"] if prod["threshold"] is not None else 10,
+                  prod["supplier"], prod["location"] or "EN_ATTENTE_AFFECTATION", now))
+            cursor.execute("""
+                SELECT v.*, p.designation, p.unit
+                FROM variants v
+                JOIN products p ON v.product_reference = p.reference
+                WHERE v.id = ?
+            """, (cursor.lastrowid,))
+            variant = cursor.fetchone()
+
     if not variant:
         conn.close()
         raise ValueError(f"Mouvement orphelin interdit : L'article '{data.reference}' ({data.color}) n'existe pas dans le Catalogue Maître. Veuillez d'abord créer l'article au catalogue.")
