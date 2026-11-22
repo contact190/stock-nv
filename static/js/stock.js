@@ -173,6 +173,9 @@ function renderStockTable(products) {
               <button onclick="quickAction('reserve', ${v.id}, '${p.reference}', '${v.color}')" class="p-1.5 rounded-lg bg-amber-50 dark:bg-amber-950 text-amber-600 hover:bg-amber-100" title="Réserver Chantier (🔒)">
                 <i data-lucide="lock" class="w-3.5 h-3.5"></i>
               </button>
+              <button onclick="openEditArticleModal(${v.id})" class="p-1.5 rounded-lg bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:bg-slate-200" title="Modifier l'article">
+                <i data-lucide="pencil" class="w-3.5 h-3.5"></i>
+              </button>
             </div>
           </td>
         </tr>
@@ -225,6 +228,7 @@ function renderStockCards(products) {
               <button onclick="quickAction('stock', ${v.id}, '${p.reference}', '${v.color}')" class="px-2 py-1 rounded bg-indigo-50 text-indigo-600 font-bold text-xs">+ Entrée</button>
               <button onclick="quickAction('destock', ${v.id}, '${p.reference}', '${v.color}')" class="px-2 py-1 rounded bg-rose-50 text-rose-600 font-bold text-xs">- Débit</button>
               <button onclick="quickAction('reserve', ${v.id}, '${p.reference}', '${v.color}')" class="px-2 py-1 rounded bg-amber-50 text-amber-600 font-bold text-xs">🔒</button>
+              <button onclick="openEditArticleModal(${v.id})" class="px-2 py-1 rounded bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 font-bold text-xs" title="Modifier l'article">✏️</button>
             </div>
           </div>
         </div>
@@ -472,3 +476,141 @@ document.addEventListener('keydown', (e) => {
     closeImagePreview();
   }
 });
+
+
+// ================= MODIFIER UN ARTICLE (tout sauf la quantité) =================
+function _editArtOptions(list, valueKey, labelFn, current) {
+  const values = list.map(x => x[valueKey]);
+  let html = list.map(x => `<option value="${x[valueKey]}">${labelFn(x)}</option>`).join('');
+  // Garde la valeur actuelle même si elle n'existe plus dans les réglages
+  if (current && !values.includes(current)) {
+    html = `<option value="${current}">${current}</option>` + html;
+  }
+  return html;
+}
+
+async function openEditArticleModal(variantId) {
+  try {
+    const res = await fetch(`/api/stock/variant/${variantId}`, { cache: 'no-store' });
+    if (!res.ok) throw new Error('Article introuvable');
+    const v = (await res.json()).variant;
+    const prod = (AppState.allReferences || []).find(p => p.reference === v.product_reference) || {};
+
+    document.getElementById('editArtVariantId').value = variantId;
+    document.getElementById('editArtSubtitle').textContent = `Réf : ${v.product_reference}`;
+    document.getElementById('editArtColorName').textContent = `(${v.color})`;
+    document.getElementById('editArtQty').textContent = `${v.real_quantity} ${v.unit || ''}`;
+
+    document.getElementById('editArtDesignation').value = v.designation || '';
+    document.getElementById('editArtCategory').innerHTML =
+      _editArtOptions(AppState.categories || [], 'name', c => c.name, v.category);
+    document.getElementById('editArtCategory').value = v.category || '';
+    document.getElementById('editArtGamme').innerHTML =
+      _editArtOptions(AppState.gammes || [], 'name', g => g.name, v.gamme);
+    document.getElementById('editArtGamme').value = v.gamme || '';
+    document.getElementById('editArtUnit').innerHTML =
+      _editArtOptions(AppState.units || [], 'symbol', u => `${u.name} (${u.symbol})`, v.unit);
+    document.getElementById('editArtUnit').value = v.unit || '';
+    document.getElementById('editArtSupplier').value = v.supplier || prod.supplier || '';
+
+    const img = v.image_url || '';
+    document.getElementById('editArtImageUrl').value = img;
+    const thumb = document.getElementById('editArtImageThumb');
+    thumb.src = img;
+    thumb.classList.toggle('hidden', !img);
+    document.getElementById('editArtImageLabel').textContent = img ? '📷 Changer la photo' : '📷 Ajouter une photo';
+
+    document.getElementById('editArtLocationList').innerHTML =
+      (AppState.workshopCases || []).map(c => `<option value="${c.code}">${c.description || ''}</option>`).join('');
+    document.getElementById('editArtLocation').value =
+      (v.location && v.location !== 'EN_ATTENTE_AFFECTATION') ? v.location : '';
+    document.getElementById('editArtThreshold').value = v.threshold ?? '';
+    document.getElementById('editArtPrice').value = v.current_price ?? '';
+    document.getElementById('editArtPmp').value = v.pmp ?? '';
+    document.getElementById('editArtRal').value = v.ral_code || '';
+    document.getElementById('editArtColorHex').value = /^#[0-9a-fA-F]{6}$/.test(v.color_hex || '') ? v.color_hex : '#64748b';
+    document.getElementById('editArtBarcode').value = v.barcode || '';
+
+    document.getElementById('modalEditArticle').classList.remove('hidden');
+    lucide.createIcons();
+  } catch (err) {
+    console.error('Erreur openEditArticleModal:', err);
+    showToast("Impossible d'ouvrir l'article", 'error');
+  }
+}
+
+function closeEditArticleModal() {
+  document.getElementById('modalEditArticle')?.classList.add('hidden');
+}
+
+async function handleEditArticleImageUpload(event) {
+  const file = event.target.files[0];
+  if (!file) return;
+  const label = document.getElementById('editArtImageLabel');
+  label.textContent = 'Envoi...';
+  try {
+    const formData = new FormData();
+    formData.append('file', file);
+    const res = await fetch('/api/stock/upload-image', { method: 'POST', body: formData });
+    const data = await res.json();
+    if (!res.ok || data.status !== 'success') throw new Error(data.detail || "Erreur d'envoi");
+    document.getElementById('editArtImageUrl').value = data.url;
+    const thumb = document.getElementById('editArtImageThumb');
+    thumb.src = data.url;
+    thumb.classList.remove('hidden');
+    label.textContent = '📷 Photo prête';
+  } catch (err) {
+    label.textContent = '📷 Changer la photo';
+    showToast(`⛔ ${err.message}`, 'error');
+  }
+}
+
+async function handleEditArticleSubmit(e) {
+  e.preventDefault();
+  const btn = document.getElementById('editArtSubmitBtn');
+  if (btn.disabled) return; // évite le double clic
+  const id = document.getElementById('editArtVariantId').value;
+  const num = (elId) => {
+    const raw = document.getElementById(elId).value;
+    return raw === '' ? null : parseFloat(raw);
+  };
+
+  const payload = {
+    designation: document.getElementById('editArtDesignation').value.trim(),
+    category: document.getElementById('editArtCategory').value,
+    gamme: document.getElementById('editArtGamme').value,
+    unit: document.getElementById('editArtUnit').value,
+    supplier: document.getElementById('editArtSupplier').value.trim(),
+    image_url: document.getElementById('editArtImageUrl').value,
+    location: document.getElementById('editArtLocation').value.trim(),
+    threshold: num('editArtThreshold'),
+    current_price: num('editArtPrice'),
+    pmp: num('editArtPmp'),
+    ral_code: document.getElementById('editArtRal').value.trim(),
+    color_hex: document.getElementById('editArtColorHex').value,
+    barcode: document.getElementById('editArtBarcode').value.trim()
+  };
+  Object.keys(payload).forEach(k => { if (payload[k] === null) delete payload[k]; });
+
+  btn.disabled = true;
+  btn.textContent = 'Enregistrement...';
+  try {
+    const res = await fetch(`/api/stock/variant/${id}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload)
+    });
+    const result = await res.json();
+    if (!res.ok) throw new Error(result.detail || 'Erreur lors de la modification');
+    showToast(`✅ ${result.message}`, 'success');
+    closeEditArticleModal();
+    await loadReferencesForSelects();
+    loadStockData();
+    if (typeof refreshDashboard === 'function') refreshDashboard();
+  } catch (err) {
+    showToast(`⛔ ${err.message}`, 'error');
+  } finally {
+    btn.disabled = false;
+    btn.textContent = 'Enregistrer';
+  }
+}

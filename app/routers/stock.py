@@ -133,48 +133,91 @@ def get_variant_details(variant_id: int):
 
 @router.put("/variant/{variant_id}")
 def update_variant(variant_id: int, data: VariantUpdateRequest):
-    """Met à jour les informations d'une variante (seuil, casier/emplacement, code-barres)."""
+    """
+    Modifie un article sauf ses quantités (stock réel, réservé, initial).
+    Champs de la teinte : seuil, casier, fournisseur, couleur affichée, RAL, code-barres, prix d'achat, PMP.
+    Champs de l'article (toutes teintes) : désignation, catégorie, gamme, unité, photo.
+    """
     conn = get_db()
     cursor = conn.cursor()
-    
-    updates = []
-    params = []
+
+    cursor.execute("SELECT * FROM variants WHERE id = ?", (variant_id,))
+    variant = cursor.fetchone()
+    if not variant:
+        conn.close()
+        raise HTTPException(status_code=404, detail="Variante introuvable")
+    reference = variant["product_reference"]
+
+    # --- Teinte ---
+    v_updates, v_params = [], []
     if data.threshold is not None:
-        updates.append("threshold = ?")
-        params.append(data.threshold)
+        if data.threshold < 0:
+            conn.close()
+            raise HTTPException(status_code=400, detail="Le seuil d'alerte ne peut pas être négatif")
+        v_updates.append("threshold = ?"); v_params.append(data.threshold)
     if data.location is not None:
         loc = data.location.strip() if data.location.strip() else "EN_ATTENTE_AFFECTATION"
-        updates.append("location = ?")
-        params.append(loc)
+        v_updates.append("location = ?"); v_params.append(loc)
     if data.supplier is not None:
-        updates.append("supplier = ?")
-        params.append(data.supplier)
+        v_updates.append("supplier = ?"); v_params.append(data.supplier.strip())
     if data.color_hex is not None:
-        updates.append("color_hex = ?")
-        params.append(data.color_hex)
+        v_updates.append("color_hex = ?"); v_params.append(data.color_hex)
+    if data.ral_code is not None:
+        v_updates.append("ral_code = ?"); v_params.append(data.ral_code.strip())
     if data.barcode is not None:
-        updates.append("barcode = ?")
-        params.append(data.barcode.strip())
+        v_updates.append("barcode = ?"); v_params.append(data.barcode.strip())
+    if data.current_price is not None:
+        if data.current_price < 0:
+            conn.close()
+            raise HTTPException(status_code=400, detail="Le prix d'achat ne peut pas être négatif")
+        v_updates.append("current_price = ?"); v_params.append(data.current_price)
+    if data.pmp is not None:
+        if data.pmp < 0:
+            conn.close()
+            raise HTTPException(status_code=400, detail="Le PMP ne peut pas être négatif")
+        v_updates.append("pmp = ?"); v_params.append(data.pmp)
 
-    if not updates:
+    # --- Article ---
+    p_updates, p_params = [], []
+    if data.designation is not None:
+        if not data.designation.strip():
+            conn.close()
+            raise HTTPException(status_code=400, detail="La désignation ne peut pas être vide")
+        p_updates.append("designation = ?"); p_params.append(data.designation.strip())
+    for field in ("category", "gamme", "unit", "image_url"):
+        val = getattr(data, field)
+        if val is not None:
+            p_updates.append(f"{field} = ?"); p_params.append(val.strip())
+    if data.supplier is not None:
+        p_updates.append("supplier = ?"); p_params.append(data.supplier.strip())
+
+    if not v_updates and not p_updates:
         conn.close()
         return {"success": True, "message": "Aucune modification"}
 
-    params.append(variant_id)
-    cursor.execute(f"UPDATE variants SET {', '.join(updates)} WHERE id = ?", params)
+    if v_updates:
+        v_updates.append("updated_at = CURRENT_TIMESTAMP")
+        cursor.execute(f"UPDATE variants SET {', '.join(v_updates)} WHERE id = ?", v_params + [variant_id])
+    if p_updates:
+        cursor.execute(f"UPDATE products SET {', '.join(p_updates)} WHERE reference = ?", p_params + [reference])
     conn.commit()
 
     cursor.execute("SELECT * FROM variants WHERE id = ?", (variant_id,))
-    updated_row = cursor.fetchone()
+    updated_variant = cursor.fetchone()
+    cursor.execute("SELECT * FROM products WHERE reference = ?", (reference,))
+    updated_product = cursor.fetchone()
     conn.close()
 
-    if updated_row:
-        try:
-            sync_variant_to_cloud(dict(updated_row))
-        except Exception:
-            pass
+    # Envoi immédiat vers Supabase (la file d'attente reprend le relais en cas d'échec)
+    try:
+        if updated_product and p_updates:
+            sync_product_to_cloud(dict(updated_product))
+        if updated_variant and v_updates:
+            sync_variant_to_cloud(dict(updated_variant))
+    except Exception:
+        pass
 
-    return {"success": True, "message": "Variante mise à jour avec succès"}
+    return {"success": True, "message": "Article modifié avec succès"}
 
 @router.post("/upload-image")
 async def upload_product_image(file: UploadFile = File(...)):

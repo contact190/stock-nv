@@ -126,11 +126,22 @@ class OrderValidateRequest(BaseModel):
     user: Optional[str] = "Admin"
 
 class VariantUpdateRequest(BaseModel):
+    # Champs de la variante (teinte)
     threshold: Optional[float] = None
     location: Optional[str] = None
     supplier: Optional[str] = None
     color_hex: Optional[str] = None
+    ral_code: Optional[str] = None
     barcode: Optional[str] = None
+    current_price: Optional[float] = None
+    pmp: Optional[float] = None
+    # Champs de l'article (communs à toutes les teintes)
+    designation: Optional[str] = None
+    category: Optional[str] = None
+    gamme: Optional[str] = None
+    unit: Optional[str] = None
+    image_url: Optional[str] = None
+    # Les quantités ne sont volontairement PAS modifiables ici
 
 class InventoryCountItem(BaseModel):
     variant_id: int
