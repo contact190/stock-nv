@@ -169,6 +169,23 @@ def _cloud_rename(old_ref, new_ref, old_color, new_color):
     return True
 
 
+@router.get("/reference-impact")
+def reference_impact(reference: str = Query(...)):
+    """Ce qui sera touché par un renommage de référence (pour la fenêtre de sécurité)."""
+    conn = get_db()
+    cursor = conn.cursor()
+    counts = {}
+    for key, sql in (("colors", "SELECT COUNT(*) FROM variants WHERE product_reference = ?"),
+                     ("movements", "SELECT COUNT(*) FROM movements WHERE product_reference = ?"),
+                     ("order_lines", "SELECT COUNT(*) FROM order_items WHERE product_reference = ?")):
+        try:
+            cursor.execute(sql, (reference,))
+            counts[key] = cursor.fetchone()[0]
+        except Exception:
+            counts[key] = 0
+    conn.close()
+    return counts
+
 @router.put("/variant/{variant_id}")
 def update_variant(variant_id: int, data: VariantUpdateRequest):
     """

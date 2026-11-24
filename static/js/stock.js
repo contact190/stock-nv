@@ -636,9 +636,9 @@ async function handleEditArticleSubmit(e) {
     return;
   }
   const o = editArtOriginal || {};
-  if (o.product_reference && payload.reference !== o.product_reference &&
-      !confirm(`Renommer la référence « ${o.product_reference} » en « ${payload.reference} » ?\nToutes ses couleurs et tout son historique seront mis à jour.`)) {
-    return;
+  if (o.product_reference && payload.reference !== o.product_reference) {
+    const ok = await askRefSecurity(o.product_reference, payload.reference);
+    if (!ok) return;
   }
 
   btn.disabled = true;
@@ -663,3 +663,52 @@ async function handleEditArticleSubmit(e) {
     btn.textContent = 'Enregistrer';
   }
 }
+
+
+// ================= POPUP DE SÉCURITÉ : CHANGEMENT DE RÉFÉRENCE =================
+let _refSecResolve = null;
+
+async function askRefSecurity(oldRef, newRef) {
+  document.getElementById('refSecOld').textContent = oldRef;
+  document.getElementById('refSecNew').textContent = newRef;
+  const input = document.getElementById('refSecInput');
+  input.value = '';
+  input.dataset.expected = newRef;
+  document.getElementById('refSecConfirmBtn').disabled = true;
+
+  const list = document.getElementById('refSecImpact');
+  list.innerHTML = '<li>Calcul de l\'impact…</li>';
+  fetch(`/api/stock/reference-impact?reference=${encodeURIComponent(oldRef)}`, { cache: 'no-store' })
+    .then(r => r.json())
+    .then(d => {
+      list.innerHTML = `
+        <li><b>${d.colors}</b> couleur(s) de cet article changeront de référence</li>
+        <li><b>${d.movements}</b> mouvement(s) du journal seront renommés</li>
+        <li><b>${d.order_lines}</b> ligne(s) de commande seront renommées</li>
+        <li>La modification est aussi faite dans la base en ligne (Supabase)</li>`;
+    })
+    .catch(() => { list.innerHTML = '<li>Toutes les couleurs, l\'historique et les commandes de cet article seront renommés.</li>'; });
+
+  document.getElementById('modalRefSecurity').classList.remove('hidden');
+  lucide.createIcons();
+  setTimeout(() => input.focus(), 50);
+  return new Promise(resolve => { _refSecResolve = resolve; });
+}
+
+function onRefSecInput() {
+  const input = document.getElementById('refSecInput');
+  document.getElementById('refSecConfirmBtn').disabled =
+    input.value.trim().toUpperCase() !== input.dataset.expected;
+}
+
+function closeRefSecurity(confirmed) {
+  document.getElementById('modalRefSecurity').classList.add('hidden');
+  if (_refSecResolve) { _refSecResolve(!!confirmed); _refSecResolve = null; }
+}
+
+document.addEventListener('keydown', (e) => {
+  const modal = document.getElementById('modalRefSecurity');
+  if (!modal || modal.classList.contains('hidden')) return;
+  if (e.key === 'Escape') closeRefSecurity(false);
+  if (e.key === 'Enter' && !document.getElementById('refSecConfirmBtn').disabled) { e.preventDefault(); closeRefSecurity(true); }
+});
