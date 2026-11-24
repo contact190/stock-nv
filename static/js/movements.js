@@ -72,7 +72,7 @@ function renderMovementsTable(movements) {
   if (!movements || movements.length === 0) {
     tbody.innerHTML = `
       <tr>
-        <td colspan="12" class="p-8 text-center text-slate-400">
+        <td colspan="13" class="p-8 text-center text-slate-400">
           <div class="flex flex-col items-center justify-center gap-2">
             <i data-lucide="inbox" class="w-8 h-8 text-slate-400"></i>
             <span>Aucun mouvement ne correspond aux filtres appliqués.</span>
@@ -90,6 +90,8 @@ function renderMovementsTable(movements) {
       actionBadge = '<span class="px-2.5 py-1 rounded-full text-[10px] font-bold bg-indigo-100 text-indigo-700 dark:bg-indigo-950 dark:text-indigo-300">📥 Entrée</span>';
     } else if (m.action_type === 'DESTOCKAGE') {
       actionBadge = '<span class="px-2.5 py-1 rounded-full text-[10px] font-bold bg-rose-100 text-rose-700 dark:bg-rose-950 dark:text-rose-300">📤 Sortie</span>';
+    } else if (m.action_type === 'LIBERATION') {
+      actionBadge = '<span class="px-2.5 py-1 rounded-full text-[10px] font-bold bg-emerald-100 text-emerald-700 dark:bg-emerald-950 dark:text-emerald-300">🔓 Libération</span>';
     } else {
       actionBadge = '<span class="px-2.5 py-1 rounded-full text-[10px] font-bold bg-amber-100 text-amber-700 dark:bg-amber-950 dark:text-amber-300">🔒 Réservation</span>';
     }
@@ -117,6 +119,11 @@ function renderMovementsTable(movements) {
 
         <td class="py-2.5 px-2.5 text-slate-600 dark:text-slate-300 text-xs">${m.operator || m.poseur || 'Atelier'}</td>
         <td class="py-2.5 px-2.5 text-slate-400 text-xs truncate max-w-[160px] xl:max-w-[240px]" title="${m.notes || ''}">${m.notes || '-'}</td>
+        <td class="py-2.5 px-2 text-center">
+          <button onclick="openDeleteMovement(${m.id})" class="p-1.5 rounded-lg bg-rose-50 dark:bg-rose-950 text-rose-600 hover:bg-rose-100" title="Supprimer et annuler ce mouvement">
+            <i data-lucide="trash-2" class="w-3.5 h-3.5"></i>
+          </button>
+        </td>
       </tr>
     `;
   }).join('');
@@ -138,3 +145,61 @@ function exportMovementsCSV() {
   window.location.href = `/api/movements/export-csv?${params.toString()}`;
   showToast('Export CSV en cours de téléchargement', 'info');
 }
+
+
+// ================= SUPPRIMER UN MOUVEMENT (= l'annuler) =================
+let delMvtId = null;
+const MVT_LABELS = { STOCKAGE: '📥 Entrée', DESTOCKAGE: '📤 Sortie', RESERVATION: '🔒 Réservation', LIBERATION: '🔓 Libération' };
+
+async function openDeleteMovement(id) {
+  try {
+    const res = await fetch(`/api/movements/${id}/cancel-preview`, { cache: 'no-store' });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.detail || 'Mouvement introuvable');
+    const m = data.movement;
+    delMvtId = id;
+    document.getElementById('delMvtSummary').innerHTML = `
+      <div><b>${MVT_LABELS[m.action_type] || m.action_type}</b> du ${m.timestamp}</div>
+      <div><span class="font-mono text-indigo-600 font-semibold">${m.product_reference}</span> — ${m.product_name} (${m.color})</div>
+      <div>Quantité : <b>${m.quantity}</b>${m.order_number ? ` • Chantier / lot : <b>${m.order_number}</b>` : ''}</div>`;
+    document.getElementById('delMvtEffect').textContent =
+      data.article_found ? `👉 ${data.effect}` : "👉 L'article n'existe plus : le mouvement sera seulement retiré du journal.";
+    document.getElementById('delMvtConfirmBtn').disabled = false;
+    document.getElementById('modalDeleteMovement').classList.remove('hidden');
+    lucide.createIcons();
+  } catch (err) {
+    showToast(`⛔ ${err.message}`, 'error');
+  }
+}
+
+function closeDeleteMovement() {
+  document.getElementById('modalDeleteMovement')?.classList.add('hidden');
+  delMvtId = null;
+}
+
+async function confirmDeleteMovement() {
+  const btn = document.getElementById('delMvtConfirmBtn');
+  if (!delMvtId || btn.disabled) return;
+  btn.disabled = true;
+  btn.textContent = 'Suppression...';
+  try {
+    const res = await fetch(`/api/movements/${delMvtId}`, { method: 'DELETE' });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.detail || 'Erreur lors de la suppression');
+    showToast(`✅ ${data.message}`, 'success');
+    closeDeleteMovement();
+    loadMovementsData();
+    if (typeof loadStockData === 'function') loadStockData();
+    if (typeof loadReferencesForSelects === 'function') loadReferencesForSelects();
+    if (typeof refreshDashboard === 'function') refreshDashboard();
+  } catch (err) {
+    showToast(`⛔ ${err.message}`, 'error');
+  } finally {
+    btn.disabled = false;
+    btn.textContent = 'Supprimer et annuler';
+  }
+}
+
+document.addEventListener('keydown', (e) => {
+  if (e.key === 'Escape') closeDeleteMovement();
+});
