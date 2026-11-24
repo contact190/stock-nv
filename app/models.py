@@ -141,7 +141,13 @@ class VariantUpdateRequest(BaseModel):
     gamme: Optional[str] = None
     unit: Optional[str] = None
     image_url: Optional[str] = None
-    # Les quantités ne sont volontairement PAS modifiables ici
+    reference: Optional[str] = None          # renommage de la référence (toutes les teintes suivent)
+    # Champs de la teinte : nom de couleur et quantités
+    color: Optional[str] = None              # renommage de la couleur
+    real_quantity: Optional[float] = None    # correction du stock réel (tracée dans le journal)
+    reserved_quantity: Optional[float] = None
+    correction_reason: Optional[str] = None  # motif de la correction de stock
+    user: Optional[str] = "Admin"
 
 class InventoryCountItem(BaseModel):
     variant_id: int

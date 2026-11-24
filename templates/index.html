@@ -1941,13 +1941,21 @@
 
       <input type="hidden" id="editArtVariantId">
 
-      <div class="p-3 rounded-xl bg-slate-50 dark:bg-slate-800/60 text-xs text-slate-500 flex items-center justify-between">
-        <span>Quantité en stock (non modifiable ici)</span>
-        <b id="editArtQty" class="text-slate-800 dark:text-white text-sm">0</b>
+      <div class="grid grid-cols-2 gap-3 p-3 rounded-xl bg-slate-50 dark:bg-slate-800/60">
+        <label class="block"><span class="text-[11px] font-semibold text-slate-500 uppercase">Stock réel <span id="editArtQty" class="normal-case text-slate-400"></span></span>
+          <input id="editArtRealQty" type="number" min="0" step="any" required oninput="onEditArtQtyChange()" class="w-full mt-1 px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-sm text-slate-900 dark:text-white font-bold"></label>
+        <label class="block"><span class="text-[11px] font-semibold text-slate-500 uppercase">Réservé</span>
+          <input id="editArtReservedQty" type="number" min="0" step="any" required class="w-full mt-1 px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-sm text-slate-900 dark:text-white"></label>
+        <div id="editArtReasonWrap" class="col-span-2 hidden space-y-1">
+          <div id="editArtQtyDiffInfo" class="text-[11px] font-semibold text-amber-700 dark:text-amber-300"></div>
+          <input id="editArtReason" placeholder="Motif de la correction (ex : erreur de saisie, casse…)" class="w-full mt-1 px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-sm text-slate-900 dark:text-white">
+        </div>
       </div>
 
       <div class="text-[11px] font-bold uppercase tracking-wider text-indigo-600">Article (toutes les teintes)</div>
       <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+        <label class="sm:col-span-2 block"><span class="text-[11px] font-semibold text-slate-500 uppercase">Référence</span>
+          <input id="editArtRef" required minlength="2" class="w-full mt-1 px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-sm text-slate-900 dark:text-white font-mono uppercase"></label>
         <label class="sm:col-span-2 block"><span class="text-[11px] font-semibold text-slate-500 uppercase">Désignation</span>
           <input id="editArtDesignation" required class="w-full mt-1 px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-sm text-slate-900 dark:text-white"></label>
         <label class="block"><span class="text-[11px] font-semibold text-slate-500 uppercase">Catégorie</span>
@@ -1970,6 +1978,9 @@
 
       <div class="text-[11px] font-bold uppercase tracking-wider text-indigo-600 pt-1">Teinte <span id="editArtColorName" class="text-slate-500"></span></div>
       <div class="grid grid-cols-2 gap-3">
+        <label class="col-span-2 block"><span class="text-[11px] font-semibold text-slate-500 uppercase">Nom de la couleur</span>
+          <input id="editArtColor" required list="editArtColorList" onchange="onEditArtColorPicked()" class="w-full mt-1 px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-sm text-slate-900 dark:text-white">
+          <datalist id="editArtColorList"></datalist></label>
         <label class="block"><span class="text-[11px] font-semibold text-slate-500 uppercase">Casier / Emplacement</span>
           <input id="editArtLocation" list="editArtLocationList" class="w-full mt-1 px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-sm text-slate-900 dark:text-white" placeholder="EN_ATTENTE_AFFECTATION">
           <datalist id="editArtLocationList"></datalist></label>
@@ -2161,7 +2172,7 @@
   <!-- Scripts Application Frontend (Versionnés pour éviter le cache navigateur) -->
   <script src="/static/js/app.js?v=2.5"></script>
   <script src="/static/js/dashboard.js?v=2.5"></script>
-  <script src="/static/js/stock.js?v=2.5"></script>
+  <script src="/static/js/stock.js?v=2.6"></script>
   <script src="/static/js/actions.js?v=2.5"></script>
   <script src="/static/js/movements.js?v=2.5"></script>
   <script src="/static/js/orders.js?v=2.5"></script>

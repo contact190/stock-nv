@@ -478,7 +478,8 @@ document.addEventListener('keydown', (e) => {
 });
 
 
-// ================= MODIFIER UN ARTICLE (tout sauf la quantité) =================
+// ================= MODIFIER UN ARTICLE (tous les champs, quantités comprises) =================
+let editArtOriginal = null;
 function _editArtOptions(list, valueKey, labelFn, current) {
   const values = list.map(x => x[valueKey]);
   let html = list.map(x => `<option value="${x[valueKey]}">${labelFn(x)}</option>`).join('');
@@ -499,7 +500,16 @@ async function openEditArticleModal(variantId) {
     document.getElementById('editArtVariantId').value = variantId;
     document.getElementById('editArtSubtitle').textContent = `Réf : ${v.product_reference}`;
     document.getElementById('editArtColorName').textContent = `(${v.color})`;
-    document.getElementById('editArtQty').textContent = `${v.real_quantity} ${v.unit || ''}`;
+    editArtOriginal = v;
+    document.getElementById('editArtQty').textContent = v.unit ? `(${v.unit})` : '';
+    document.getElementById('editArtRealQty').value = v.real_quantity ?? 0;
+    document.getElementById('editArtReservedQty').value = v.reserved_quantity ?? 0;
+    document.getElementById('editArtReason').value = '';
+    onEditArtQtyChange();
+    document.getElementById('editArtRef').value = v.product_reference || '';
+    document.getElementById('editArtColor').value = v.color || '';
+    document.getElementById('editArtColorList').innerHTML =
+      (AppState.colors || []).map(c => `<option value="${c.name}"></option>`).join('');
 
     document.getElementById('editArtDesignation').value = v.designation || '';
     document.getElementById('editArtCategory').innerHTML =
@@ -537,6 +547,30 @@ async function openEditArticleModal(variantId) {
     console.error('Erreur openEditArticleModal:', err);
     showToast("Impossible d'ouvrir l'article", 'error');
   }
+}
+
+function onEditArtQtyChange() {
+  if (!editArtOriginal) return;
+  const newQty = parseFloat(document.getElementById('editArtRealQty').value);
+  const oldQty = parseFloat(editArtOriginal.real_quantity) || 0;
+  const wrap = document.getElementById('editArtReasonWrap');
+  if (!isNaN(newQty) && Math.abs(newQty - oldQty) > 1e-9) {
+    const diff = +(newQty - oldQty).toFixed(4);
+    document.getElementById('editArtQtyDiffInfo').textContent =
+      `Correction : ${oldQty} → ${newQty} (${diff > 0 ? '+' : ''}${diff}). Elle sera enregistrée dans le journal des mouvements.`;
+    wrap.classList.remove('hidden');
+  } else {
+    wrap.classList.add('hidden');
+  }
+}
+
+function onEditArtColorPicked() {
+  // Couleur choisie dans le nuancier : on reprend son code RAL et sa teinte
+  const name = document.getElementById('editArtColor').value.trim();
+  const c = (AppState.colors || []).find(x => x.name === name);
+  if (!c) return;
+  if (c.ral_code) document.getElementById('editArtRal').value = c.ral_code;
+  if (/^#[0-9a-fA-F]{6}$/.test(c.hex_code || '')) document.getElementById('editArtColorHex').value = c.hex_code;
 }
 
 function closeEditArticleModal() {
@@ -588,9 +622,24 @@ async function handleEditArticleSubmit(e) {
     pmp: num('editArtPmp'),
     ral_code: document.getElementById('editArtRal').value.trim(),
     color_hex: document.getElementById('editArtColorHex').value,
-    barcode: document.getElementById('editArtBarcode').value.trim()
+    barcode: document.getElementById('editArtBarcode').value.trim(),
+    reference: document.getElementById('editArtRef').value.trim().toUpperCase(),
+    color: document.getElementById('editArtColor').value.trim(),
+    real_quantity: num('editArtRealQty'),
+    reserved_quantity: num('editArtReservedQty'),
+    correction_reason: document.getElementById('editArtReason').value.trim()
   };
   Object.keys(payload).forEach(k => { if (payload[k] === null) delete payload[k]; });
+
+  if ((payload.reserved_quantity ?? 0) > (payload.real_quantity ?? Infinity)) {
+    showToast('⛔ Le réservé ne peut pas dépasser le stock réel', 'error');
+    return;
+  }
+  const o = editArtOriginal || {};
+  if (o.product_reference && payload.reference !== o.product_reference &&
+      !confirm(`Renommer la référence « ${o.product_reference} » en « ${payload.reference} » ?\nToutes ses couleurs et tout son historique seront mis à jour.`)) {
+    return;
+  }
 
   btn.disabled = true;
   btn.textContent = 'Enregistrement...';
